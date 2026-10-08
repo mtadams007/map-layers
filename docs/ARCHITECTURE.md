@@ -132,7 +132,7 @@ Each phase ends with something usable, so the plan can stop or change direction 
 
 ## Open questions and risks
 
-- [ ] Typical size of the layer images (pixels per side, file size). Over about 10,000 px changes the phone plan.
+- [ ] Typical size of the layer images (pixels per side, file size). Over about 10,000 px changes the phone plan. Largest sample so far: `paris_map_final.jpg`, 11,871 × 8,951 px RGB JPEG (no transparency), 49 MB file, about 425 MB once decoded.
 - [ ] Are any source layers vector PDFs with internal layers or GeoPDF coordinates? That could replace manual splitting or alignment.
 - [ ] Do any layers have solid white backgrounds instead of transparency? If so, a multiply blend mode may be needed after all.
 - [ ] Are the maps distorted (hand-drawn, old scans)? Affine may not be enough; a rubber-sheet transform is a large addition.
