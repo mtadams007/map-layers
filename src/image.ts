@@ -14,7 +14,9 @@ export const ACCEPTED_TYPES = ['image/png', 'image/jpeg'];
  */
 export async function decodeImage(file: Blob, name: string): Promise<DecodedImage> {
   try {
-    const bitmap = await createImageBitmap(file, { premultiplyAlpha: 'premultiply' });
+    // No premultiply option: the renderer reads pixels back through a 2D canvas anyway, and on
+    // Safari the conversion can cost an extra full copy of the image.
+    const bitmap = await createImageBitmap(file);
     return {
       source: bitmap,
       width: bitmap.width,

@@ -20,8 +20,13 @@ export interface Layer {
   name: string;
   width: number;
   height: number;
-  /** The original image file, kept for saving and export. */
-  file: Blob;
+  /**
+   * The original image file, kept for saving and export. Null on a phone that opened the phone
+   * copy: the original stays in storage and is only read if the map is exported there.
+   */
+  file: Blob | null;
+  /** Media type of the original, e.g. image/jpeg. */
+  fileType: string;
   /** Whether `file` is already in on-device storage, so a save can skip it. */
   stored: boolean;
   /** Smaller copy for phones, or null when the original is small enough (or none was made yet). */
@@ -175,7 +180,7 @@ export function toProject(modified: string): Project {
     layers: state.layers.map((l, order) => ({
       id: l.id,
       name: l.name,
-      file: `layers/${l.id}.${IMAGE_EXTENSIONS[l.file.type] ?? 'png'}`,
+      file: `layers/${l.id}.${IMAGE_EXTENSIONS[l.fileType] ?? 'png'}`,
       phoneFile: l.phoneFile ? `layers-phone/${l.id}.${IMAGE_EXTENSIONS[l.phoneFile.type] ?? 'png'}` : null,
       width: l.width,
       height: l.height,

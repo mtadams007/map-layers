@@ -110,13 +110,17 @@ function imageKey(projectId: string, layerId: string, phone: boolean): string {
   return `${projectId}/${layerId}${phone ? '/phone' : ''}`;
 }
 
-/** Original images, or with `phone` the phone copies of layers that have one, keyed by layer id. */
-export async function getImages(project: Project, phone = false): Promise<Map<string, Blob>> {
+/**
+ * Original images, or with `phone` the phone copies of layers that have one, keyed by layer id.
+ * `only` limits it to some layers, so a phone needn't load originals it won't draw.
+ */
+export async function getImages(project: Project, phone = false, only?: Set<string>): Promise<Map<string, Blob>> {
   const tx = (await db()).transaction(IMAGES);
   const store = tx.objectStore(IMAGES);
   const images = new Map<string, Blob>();
   for (const layer of project.layers) {
     if (phone && !layer.phoneFile) continue;
+    if (only && !only.has(layer.id)) continue;
     const rec = await request(store.get(imageKey(project.id, layer.id, phone)) as IDBRequest<ImageRecord | undefined>);
     const blob = fromStored(rec?.file ?? rec?.blob);
     if (blob) images.set(layer.id, blob);

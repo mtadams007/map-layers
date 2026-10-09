@@ -3,6 +3,8 @@ import type { Transform } from '../fit';
 
 /** Largest tile edge. Keeps each texture well inside every GPU's limit, including phones later. */
 const MAX_TILE = 4096;
+/** Tile edge on phones: about 16 MB per working copy instead of 64 MB. */
+export const PHONE_TILE = 2048;
 /** Smallest tile edge tried when the browser refuses larger tiles. */
 const MIN_TILE = 1024;
 /** Extra pixels copied around each tile so filtering doesn't show seams between tiles. */
@@ -83,6 +85,11 @@ export class Renderer {
   private smooth: WebGLSampler;
   private sharp: WebGLSampler;
   private layers = new Map<string, GpuLayer>();
+  /**
+   * Largest tile edge to use. Phones use smaller tiles: each tile is copied through a 2D canvas
+   * while uploading, and on a phone those copies count against a tight memory limit.
+   */
+  tileLimit = MAX_TILE;
   private dpr = 1;
   private pane: Rect = { x: 0, y: 0, width: 1, height: 1 };
 
@@ -170,7 +177,7 @@ export class Renderer {
     layerWidth = width,
     layerHeight = height,
   ) {
-    let tileSize = Math.min(MAX_TILE, this.maxTextureSize);
+    let tileSize = Math.min(this.tileLimit, MAX_TILE, this.maxTextureSize);
     for (;;) {
       try {
         const tiles = this.uploadTiles(source, width, height, tileSize, layerWidth / width, layerHeight / height);

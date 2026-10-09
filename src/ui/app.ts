@@ -1,7 +1,7 @@
 import type { Vec } from '../fit';
 import type { Renderer } from '../gl/renderer';
 import { ACCEPTED_TYPES, decodeImage, makePhoneCopy, needsPhoneCopy, thumbnail, usesPhoneCopies } from '../image';
-import { ProjectError, type Project } from '../project';
+import { mimeForFile, ProjectError, type Project } from '../project';
 import {
   baseLayer,
   canUseAffine,
@@ -118,8 +118,15 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
       showError("That map couldn't be found. It may have been deleted.");
       return refreshLibrary();
     }
-    const images = await getImages(stored.project);
     const phoneImages = await getImages(stored.project, true);
+    // A phone draws the phone copy of large layers, so it doesn't load those originals at all.
+    const onPhone = usesPhoneCopies();
+    const needed = new Set(
+      stored.project.layers
+        .filter((l) => !(onPhone && needsPhoneCopy(l.width, l.height) && phoneImages.has(l.id)))
+        .map((l) => l.id),
+    );
+    const images = await getImages(stored.project, false, needed);
     await loadIntoEditor(stored.project, images, phoneImages);
   }
 
@@ -137,8 +144,6 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
     try {
       for (const [i, pl] of project.layers.entries()) {
         setBusy(`Opening ${project.name}: layer ${i + 1} of ${project.layers.length}`);
-        const original = images.get(pl.id);
-        if (!original) throw new ProjectError(`The image for "${pl.name}" is missing.`);
         let phoneCopy = phoneImages.get(pl.id) ?? null;
         const usePhoneCopy = onPhone && needsPhoneCopy(pl.width, pl.height);
         if (usePhoneCopy && !phoneCopy) {
@@ -146,7 +151,9 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
             `"${pl.name}" is too large to open on this device, and this map has no smaller copy for phones. Open it in Map Layers on a laptop and export it again.`,
           );
         }
-        const image = await decodeImage(usePhoneCopy ? phoneCopy! : original, pl.name);
+        const original = images.get(pl.id) ?? null;
+        if (!usePhoneCopy && !original) throw new ProjectError(`The image for "${pl.name}" is missing.`);
+        const image = await decodeImage(usePhoneCopy ? phoneCopy! : original!, pl.name);
         try {
           // A phone copy is drawn at the original's size, so points still line up.
           const width = usePhoneCopy ? pl.width : image.width;
@@ -158,7 +165,7 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
           // Maps saved before phone copies existed get one now, while the original is decoded.
           let phoneStored = phoneCopy !== null;
           if (!onPhone && !phoneCopy && needsPhoneCopy(image.width, image.height)) {
-            phoneCopy = await makePhoneCopy(image, original.type);
+            phoneCopy = await makePhoneCopy(image, original!.type);
             phoneStored = false;
             madePhoneCopies = true;
           }
@@ -168,6 +175,7 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
             width,
             height,
             file: original,
+            fileType: mimeForFile(pl.file) ?? 'image/png',
             stored: true,
             phoneFile: phoneCopy,
             phoneStored,
@@ -350,7 +358,7 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
     renderTopbar();
     try {
       const project = toProject(new Date().toISOString());
-      const newImages = new Map(state.layers.filter((l) => !l.stored).map((l) => [l.id, l.file]));
+      const newImages = new Map(state.layers.filter((l) => !l.stored && l.file).map((l) => [l.id, l.file!]));
       const newPhone = new Map(state.layers.filter((l) => l.phoneFile && !l.phoneStored).map((l) => [l.id, l.phoneFile!]));
       await saveProject(project, newImages, newPhone, await mapThumbnail());
       for (const l of state.layers) {
@@ -371,7 +379,9 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
     setBusy('Preparing the .zip…');
     try {
       const project = toProject(new Date().toISOString());
-      const images = new Map(state.layers.map((l) => [l.id, l.file]));
+      const images = new Map(state.layers.filter((l) => l.file).map((l) => [l.id, l.file!]));
+      const notLoaded = new Set(state.layers.filter((l) => !l.file).map((l) => l.id));
+      if (notLoaded.size) for (const [id, blob] of await getImages(project, false, notLoaded)) images.set(id, blob);
       const phoneImages = new Map(state.layers.filter((l) => l.phoneFile).map((l) => [l.id, l.phoneFile!]));
       download(await buildZip(project, images, phoneImages, await mapThumbnail()), project.name);
     } catch (err) {
@@ -425,6 +435,7 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
         width: image.width,
         height: image.height,
         file,
+        fileType: file.type,
         stored: false,
         // Made now, while the original is decoded, so phones never have to decode it.
         phoneFile: await makePhoneCopy(image, file.type),
