@@ -21,3 +21,13 @@ try {
   root.innerHTML = `<div class="fatal"><h1>Map Layers can't start</h1><p></p></div>`;
   root.querySelector('.fatal p')!.textContent = err instanceof Error ? err.message : String(err);
 }
+
+// Keep the app's files on the device so it opens offline. Only in a built app: during development
+// a cache would hide code changes.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // Without it the app still works online; it just won't open offline.
+    });
+  });
+}

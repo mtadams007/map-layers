@@ -8,7 +8,7 @@ Read `docs/ARCHITECTURE.md` for the full design and `docs/wireframes/` for the a
 
 - **Never commit or push.** No `git commit`, `git push`, `gh pr create` or `gh pr merge`, even if asked in passing; the owner does all of these. This is enforced by `.claude/settings.json`; don't change that file.
 - **Don't write code until the owner explicitly says to start.** Answering a planning question is not a go-ahead.
-- **Build one phase at a time and stop for review at the end of each.** Phases 1 and 2 are built (see the roadmap in the architecture doc). Don't start the next phase without the owner's go-ahead.
+- **Build one phase at a time and stop for review at the end of each.** Phases 1–3 are built; phase 3 still needs checking on a real Android phone (see the roadmap in the architecture doc). Don't start the next phase without the owner's go-ahead.
 - **Images and project data never leave the device.** No analytics, no telemetry, no third-party scripts or fonts loaded at runtime, no network calls except loading the app's own files. Bundle every dependency. The app must work fully in airplane mode once installed.
 - **Keep dependencies small.** Plain TypeScript + Vite, WebGL for rendering, fflate for zip. No UI framework unless there is a clear need; ask first.
 - **Version the project file from day one.** `project.json` carries `formatVersion` (starts at 1); the importer must handle older versions.
@@ -17,7 +17,9 @@ Read `docs/ARCHITECTURE.md` for the full design and `docs/wireframes/` for the a
 
 - **No blend modes for now.** No Normal/Multiply/Screen control anywhere in the UI. Listed under "Later, if needed".
 - **Pinch-zoom anchors at the point between the fingers.** Two-finger pan at the same time, zoom limits (can't zoom out past the whole map or in absurdly far), double-tap to zoom in. Laptop: trackpad pinch and scroll wheel zoom toward the cursor. Prevent the browser's own page zoom (iPhone Safari needs extra care).
-- **Create mode is laptop-only.** Phones get the Library and View screens. Create mode is reachable on a phone only through "Edit alignment" in the library menu, and that entry may be removed.
+- **Create mode is laptop-only.** Phones get the Library and View screens only; there is no "Edit alignment" entry on phones.
+- **Phone layer rows have no expand button until phase 4,** when brightness and recolor arrive. Phase 3 rows are visibility, opacity slider and percentage.
+- **Android testing comes later:** the owner will have an Android phone soon. Until then, test on the owner's iPhone 12 mini and with Android emulation.
 - **Layer order:** top of the list draws on top. Reordering happens in Create mode only.
 - **Phone layer panel:** one row per layer (visibility, opacity slider, percentage, expand button). Expanding a row shows brightness and recolor swatches.
 - **Originals stay full size; phones get a smaller copy.** The laptop keeps and exports the original images. When a layer larger than 6,000 px on its longest side is added (or an older map is opened or exported on a laptop), a phone copy at 6,000 px is made and stored under `layers-phone/` in the zip (`phoneFile` in project.json). Touch-first devices open only the phone copies, drawn at the original's size so points still line up. Reason: an iPhone 12 mini crashed opening the 11,871 × 8,951 px base map at full size. The limit is `PHONE_MAX_SIDE` in `src/image.ts`. The renderer splits large images into tiles. Overlay layers are PNGs with transparent backgrounds.

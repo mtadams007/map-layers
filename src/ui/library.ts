@@ -3,8 +3,17 @@ import { esc } from './html';
 
 const urls: string[] = [];
 
+/** Install help shown on phones: iPhone needs instructions, Android has a browser prompt. */
+export type InstallHelp = 'ios' | 'android' | null;
+
+export interface LibraryOptions {
+  /** Phones can't create maps, only import and view them. */
+  phone: boolean;
+  install: InstallHelp;
+}
+
 /** Library page markup. Thumbnail object URLs from the previous render are released. */
-export function libraryHtml(maps: StoredProject[] | null, openMenu: string | null): string {
+export function libraryHtml(maps: StoredProject[] | null, openMenu: string | null, opts: LibraryOptions): string {
   for (const u of urls.splice(0)) URL.revokeObjectURL(u);
   const cards =
     maps === null
@@ -12,7 +21,11 @@ export function libraryHtml(maps: StoredProject[] | null, openMenu: string | nul
       : maps.length === 0
         ? `<div class="library-empty">
              <h2>No maps yet</h2>
-             <p class="muted">Start a new map from your images, or import a .zip someone sent you.</p>
+             <p class="muted">${
+               opts.phone
+                 ? 'Import a .zip exported from Map Layers on a laptop. Maps are made and aligned on a laptop.'
+                 : 'Start a new map from your images, or import a .zip someone sent you.'
+             }</p>
            </div>`
         : `<ul class="map-grid">${maps.map((m) => cardHtml(m, openMenu === m.id)).join('')}</ul>`;
   return `
@@ -20,16 +33,37 @@ export function libraryHtml(maps: StoredProject[] | null, openMenu: string | nul
       <div class="library-head">
         <h1>Maps</h1>
         <span class="spacer"></span>
-        <button class="button" data-action="import">Import .zip</button>
-        <button class="button primary" data-action="new-map">+ New map</button>
+        ${
+          opts.phone
+            ? '<button class="button primary" data-action="import">Import .zip</button>'
+            : `<button class="button" data-action="import">Import .zip</button>
+               <button class="button primary" data-action="new-map">+ New map</button>`
+        }
       </div>
+      ${installHtml(opts.install)}
       ${cards}
       <aside class="notice">
         <strong>Keep your .zip files</strong>
-        <p>Maps are stored only in this browser on this device, and the browser can clear that storage.
-        Export a .zip of each map and keep it in Drive or Files as a backup.</p>
+        <p>Maps are stored only in this browser on this ${opts.phone ? 'phone' : 'device'}, and the browser can clear that storage.
+        Keep the .zip of each map in Drive or Files as a backup.</p>
       </aside>
     </div>`;
+}
+
+function installHtml(help: InstallHelp): string {
+  if (!help) return '';
+  const body =
+    help === 'ios'
+      ? `<p>Add it to your Home Screen to use it like an app, including offline: tap the
+         <strong>Share</strong> button <span aria-hidden="true">(□↑)</span> in Safari, then
+         <strong>Add to Home Screen</strong>.</p>`
+      : `<p>Install it to use it like an app, including offline.</p>
+         <button class="button primary" data-action="install">Install</button>`;
+  return `
+    <aside class="install-card">
+      <div><strong>Install Map Layers</strong>${body}</div>
+      <button class="icon" data-action="dismiss-install" aria-label="Dismiss">×</button>
+    </aside>`;
 }
 
 function cardHtml(m: StoredProject, menuOpen: boolean): string {

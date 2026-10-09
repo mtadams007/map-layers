@@ -1,3 +1,5 @@
+import { isPhone } from './device';
+
 export interface DecodedImage {
   source: ImageBitmap | HTMLImageElement;
   width: number;
@@ -92,10 +94,7 @@ export async function makePhoneCopy(image: DecodedImage, type: string): Promise<
   return blob;
 }
 
-/**
- * Touch-first devices (phones, tablets) open the smaller phone copies. Their memory per tab is far
- * below a laptop's, and decoding a full-size map there can crash the page.
- */
+/** Phones and tablets open the smaller phone copies; see isPhone in device.ts. */
 export function usesPhoneCopies(): boolean {
-  return window.matchMedia('(pointer: coarse)').matches;
+  return isPhone();
 }

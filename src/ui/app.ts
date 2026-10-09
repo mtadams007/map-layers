@@ -20,12 +20,14 @@ import {
 import { deleteProject, getImages, getProject, listProjects, renameProject, saveProject, type StoredProject } from '../storage';
 import { composeThumbnail } from '../thumbnail';
 import { buildZip, readZip } from '../zip';
+import { isIOS, isPhone, isStandalone } from '../device';
 import { newId } from '../id';
 import { esc } from './html';
-import { libraryHtml } from './library';
+import { libraryHtml, type InstallHelp } from './library';
 import { forgetCamera, Pane, resetBaseCamera, type PaneKind } from './panes';
 
 const WORKSPACE_BG: [number, number, number] = [0.953, 0.957, 0.965];
+const INSTALL_HELP_KEY = 'map-layers:install-help-dismissed';
 const UNTITLED = 'Untitled map';
 
 export function startApp(root: HTMLElement, renderer: Renderer) {
@@ -60,6 +62,14 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
   /** Layer whose name is being edited in the layer list. */
   let renamingLayer: string | null = null;
   let saving = false;
+  /** Phones get the Library and View screens only, laid out for touch. */
+  const phone = isPhone();
+  root.dataset.device = phone ? 'phone' : 'laptop';
+  /** Whether the phone's layer sheet is pulled up. */
+  let sheetOpen = true;
+  /** Chrome on Android offers its own install prompt; this holds it until the user asks. */
+  let installPrompt: (Event & { prompt: () => Promise<void> }) | null = null;
+  let installHelpDismissed = readFlag(INSTALL_HELP_KEY);
 
   function requestDraw() {
     if (drawQueued) return;
@@ -113,6 +123,8 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
   }
 
   async function openMap(id: string) {
+    // A message from the library ("Imported …") would otherwise sit over the map.
+    toast.hidden = true;
     const stored = await getProject(id).catch(() => undefined);
     if (!stored) {
       showError("That map couldn't be found. It may have been deleted.");
@@ -200,8 +212,9 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
     state.baseId = project.baseLayerId;
     state.selectedId = state.layers.find((l) => l.id !== state.baseId)?.id ?? state.baseId;
     state.screen = 'editor';
-    state.mode = 'create';
+    state.mode = phone ? 'view' : 'create';
     state.dirty = false;
+    sheetOpen = true;
     resetBaseCamera();
     changed();
     if (warnings.length) showToast(warnings.join(' '));
@@ -557,7 +570,7 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
       layoutKey = '';
       sidebar.innerHTML = '';
       panel.innerHTML = '';
-      workspace.innerHTML = libraryHtml(library, openMenu);
+      workspace.innerHTML = libraryHtml(library, openMenu, { phone, install: installHelp() });
       requestDraw();
       return;
     }
@@ -567,7 +580,22 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
     requestDraw();
   }
 
+  /** Which install help the library shows, if any. */
+  function installHelp(): InstallHelp {
+    if (!phone || isStandalone() || installHelpDismissed) return null;
+    if (isIOS()) return 'ios';
+    return installPrompt ? 'android' : null;
+  }
+
   function renderTopbar() {
+    if (phone && state.screen === 'editor') {
+      // The phone View has no header: the map fills the screen.
+      if (topbarKey !== 'phone-editor') {
+        topbarKey = 'phone-editor';
+        topbar.innerHTML = '';
+      }
+      return;
+    }
     if (state.screen === 'library') {
       if (topbarKey !== 'library') {
         topbarKey = 'library';
@@ -708,7 +736,14 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
         </div>`;
     }
     if (state.mode === 'view') {
-      return `<div class="panes"><section class="pane bare"><div class="pane-body" data-pane="view"></div></section></div>`;
+      const overlay = phone
+        ? `<div class="phone-top">
+             <button class="round-button" data-action="library" aria-label="Back to maps">‹</button>
+             <span class="name-pill">${esc(state.map?.name ?? '')}</span>
+           </div>
+           <div class="gesture-hint">Drag to move · pinch to zoom</div>`
+        : '';
+      return `<div class="panes"><section class="pane bare"><div class="pane-body" data-pane="view">${overlay}</div></section></div>`;
     }
     if (!aligning) {
       return `
@@ -763,7 +798,26 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
   }
 
   function renderPanel() {
+    if (phone) {
+      panel.classList.toggle('open', sheetOpen);
+      panel.innerHTML = sheetHtml();
+      return;
+    }
     panel.innerHTML = state.mode === 'view' ? viewPanelHtml() : fitPanelHtml();
+  }
+
+  /** The phone's layer panel: a bottom sheet over the map, pulled up or down by its handle. */
+  function sheetHtml(): string {
+    const save = state.dirty
+      ? `<button class="button primary small-button" data-action="save" ${saving ? 'disabled' : ''}>${saving ? 'Saving…' : 'Save'}</button>`
+      : '';
+    return `
+      <div class="sheet-handle" data-action="sheet-toggle" aria-label="${sheetOpen ? 'Hide' : 'Show'} layers" role="button"><span></span></div>
+      <div class="sheet-head">
+        <h2 class="sheet-title" data-action="sheet-toggle">Layers</h2>
+        ${save}
+      </div>
+      <ul class="view-list">${viewRowsHtml()}</ul>`;
   }
 
   function fitPanelHtml(): string {
@@ -854,7 +908,12 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
   }
 
   function viewPanelHtml(): string {
-    const rows = state.layers
+    return `<h2>Layers</h2><ul class="view-list">${viewRowsHtml()}</ul>
+      <p class="muted small">Drag to pan, scroll or pinch to zoom, double-click to zoom in. Opacity and visibility are saved with the map.</p>`;
+  }
+
+  function viewRowsHtml(): string {
+    return state.layers
       .map((l) => {
         const aligned = l.id === state.baseId || l.points.length >= 2;
         if (!aligned) {
@@ -868,8 +927,6 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
           </li>`;
       })
       .join('');
-    return `<h2>Layers</h2><ul class="view-list">${rows}</ul>
-      <p class="muted small">Drag to pan, scroll or pinch to zoom, double-click to zoom in. Opacity and visibility are saved with the map.</p>`;
   }
 
   // ---- Events ----
@@ -885,6 +942,21 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
     }
     const id = target.dataset.id ?? null;
     switch (target.dataset.action) {
+      // Phone
+      case 'sheet-toggle':
+        sheetOpen = !sheetOpen;
+        renderPanel();
+        break;
+      case 'install':
+        void installPrompt?.prompt();
+        installPrompt = null;
+        changed();
+        break;
+      case 'dismiss-install':
+        installHelpDismissed = true;
+        writeFlag(INSTALL_HELP_KEY);
+        changed();
+        break;
       // Library
       case 'new-map':
         newMap();
@@ -1042,9 +1114,17 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
     if (input.dataset.slider === 'overlay-opacity') {
       state.overlayOpacity = value;
     } else if (input.dataset.slider === 'layer-opacity') {
+      const wasDirty = state.dirty;
       layerById(input.dataset.id ?? null)!.opacity = value;
       state.dirty = true;
       renderTopbar();
+      // Re-rendering the sheet mid-drag would drop the slider, so only add the Save button once.
+      if (phone && !wasDirty) {
+        const head = panel.querySelector('.sheet-head');
+        if (head && !head.querySelector('[data-action="save"]')) {
+          head.insertAdjacentHTML('beforeend', '<button class="button primary small-button" data-action="save">Save</button>');
+        }
+      }
     }
     // Update the readout in place; re-rendering would interrupt the drag.
     const out = input.parentElement?.querySelector('output');
@@ -1147,6 +1227,30 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
     }
   });
 
+  // Swipe the sheet's handle up or down.
+  let sheetDrag: { y: number; id: number } | null = null;
+  panel.addEventListener('pointerdown', (e) => {
+    if (!phone || !(e.target as HTMLElement).closest('.sheet-handle, .sheet-title')) return;
+    sheetDrag = { y: e.clientY, id: e.pointerId };
+  });
+  panel.addEventListener('pointerup', (e) => {
+    if (!sheetDrag || sheetDrag.id !== e.pointerId) return;
+    const dy = e.clientY - sheetDrag.y;
+    sheetDrag = null;
+    if (Math.abs(dy) > 30 && (dy > 0) === sheetOpen) {
+      sheetOpen = !sheetOpen;
+      renderPanel();
+      // The tap that follows a swipe would toggle it straight back.
+      panel.addEventListener('click', (ev) => ev.stopPropagation(), { capture: true, once: true });
+    }
+  });
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    installPrompt = e as Event & { prompt: () => Promise<void> };
+    if (state.screen === 'library') changed();
+  });
+
   window.addEventListener('beforeunload', (e) => {
     if (state.screen === 'editor' && state.dirty) e.preventDefault();
   });
@@ -1169,3 +1273,20 @@ function sliderHtml(name: string, label: string, value: number, id = ''): string
 
 const EYE = `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
 const EYE_OFF = `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 20 20 4" stroke="currentColor" stroke-width="2"/></svg>`;
+
+/** A remembered yes/no, kept in this browser only. Storage may be blocked; then it isn't kept. */
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeFlag(key: string) {
+  try {
+    localStorage.setItem(key, '1');
+  } catch {
+    // Not kept; the help shows again next time.
+  }
+}
