@@ -106,12 +106,18 @@ export async function getProject(id: string): Promise<StoredProject | undefined>
   return rec && toProject(rec);
 }
 
-export async function getImages(project: Project): Promise<Map<string, Blob>> {
+function imageKey(projectId: string, layerId: string, phone: boolean): string {
+  return `${projectId}/${layerId}${phone ? '/phone' : ''}`;
+}
+
+/** Original images, or with `phone` the phone copies of layers that have one, keyed by layer id. */
+export async function getImages(project: Project, phone = false): Promise<Map<string, Blob>> {
   const tx = (await db()).transaction(IMAGES);
   const store = tx.objectStore(IMAGES);
   const images = new Map<string, Blob>();
   for (const layer of project.layers) {
-    const rec = await request(store.get(`${project.id}/${layer.id}`) as IDBRequest<ImageRecord | undefined>);
+    if (phone && !layer.phoneFile) continue;
+    const rec = await request(store.get(imageKey(project.id, layer.id, phone)) as IDBRequest<ImageRecord | undefined>);
     const blob = fromStored(rec?.file ?? rec?.blob);
     if (blob) images.set(layer.id, blob);
   }
@@ -119,22 +125,32 @@ export async function getImages(project: Project): Promise<Map<string, Blob>> {
 }
 
 /**
- * Save a map. `newImages` holds only images not stored yet (keyed by layer id); stored images of
- * layers that are no longer in the map are deleted. Everything happens in one transaction, so a
+ * Save a map. `newImages` and `newPhoneImages` hold only images not stored yet (keyed by layer id);
+ * stored images the map no longer uses are deleted. Everything happens in one transaction, so a
  * failed save leaves the previous version intact.
  */
-export async function saveProject(project: Project, newImages: Map<string, Blob>, thumbnail: Blob | null) {
+export async function saveProject(
+  project: Project,
+  newImages: Map<string, Blob>,
+  newPhoneImages: Map<string, Blob>,
+  thumbnail: Blob | null,
+) {
   // Read every file before opening the transaction: awaiting other work inside it would end it.
   const files = new Map<string, StoredFile>();
-  for (const [layerId, blob] of newImages) files.set(layerId, await toStored(blob));
+  for (const [layerId, blob] of newImages) files.set(imageKey(project.id, layerId, false), await toStored(blob));
+  for (const [layerId, blob] of newPhoneImages) files.set(imageKey(project.id, layerId, true), await toStored(blob));
   const thumb = thumbnail ? await toStored(thumbnail) : null;
 
   const tx = (await db()).transaction([PROJECTS, IMAGES], 'readwrite');
   const images = tx.objectStore(IMAGES);
-  for (const [layerId, file] of files) {
-    images.put({ key: `${project.id}/${layerId}`, projectId: project.id, file } satisfies ImageRecord);
+  for (const [key, file] of files) {
+    images.put({ key, projectId: project.id, file } satisfies ImageRecord);
   }
-  const keep = new Set(project.layers.map((l) => `${project.id}/${l.id}`));
+  const keep = new Set(project.layers.flatMap((l) => {
+    const keys = [imageKey(project.id, l.id, false)];
+    if (l.phoneFile) keys.push(imageKey(project.id, l.id, true));
+    return keys;
+  }));
   const keys = await request(images.index('projectId').getAllKeys(project.id));
   for (const key of keys) if (!keep.has(String(key))) images.delete(key);
   tx.objectStore(PROJECTS).put({ id: project.id, project, thumbnail: thumb } satisfies ProjectRecord);

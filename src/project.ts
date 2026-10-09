@@ -15,7 +15,7 @@ export interface ProjectLayer {
   name: string;
   /** Path of the original image inside the zip, e.g. "layers/<id>.png". */
   file: string;
-  /** Downscaled copy for phones; not written yet. */
+  /** Smaller copy for phones, e.g. "layers-phone/<id>.jpg"; null when the original is small enough. */
   phoneFile: string | null;
   width: number;
   height: number;
@@ -112,7 +112,9 @@ function validateV1(raw: Record<string, unknown>): Project {
 function validateLayer(raw: unknown, index: number): ProjectLayer {
   if (!isObject(raw)) throw bad(`layer ${index + 1}`);
   const file = str(raw.file, 'layer file');
-  if (!mimeForFile(file) || file.includes('..') || file.startsWith('/')) throw bad('layer file');
+  if (!safeImagePath(file)) throw bad('layer file');
+  const phoneFile = typeof raw.phoneFile === 'string' ? raw.phoneFile : null;
+  if (phoneFile !== null && !safeImagePath(phoneFile)) throw bad('layer phone file');
   const alignment = isObject(raw.alignment) ? raw.alignment : {};
   const appearance = isObject(raw.appearance) ? raw.appearance : {};
   const points = Array.isArray(alignment.points) ? alignment.points : [];
@@ -120,7 +122,7 @@ function validateLayer(raw: unknown, index: number): ProjectLayer {
     id: str(raw.id, 'layer id'),
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name : `Layer ${index + 1}`,
     file,
-    phoneFile: typeof raw.phoneFile === 'string' ? raw.phoneFile : null,
+    phoneFile,
     width: positiveInt(raw.width, 'layer width'),
     height: positiveInt(raw.height, 'layer height'),
     order: typeof raw.order === 'number' && Number.isFinite(raw.order) ? raw.order : index,
@@ -142,6 +144,10 @@ function validateLayer(raw: unknown, index: number): ProjectLayer {
       recolor: typeof appearance.recolor === 'string' && /^#[0-9a-f]{6}$/i.test(appearance.recolor) ? appearance.recolor : null,
     },
   };
+}
+
+function safeImagePath(path: string): boolean {
+  return mimeForFile(path) !== null && !path.includes('..') && !path.startsWith('/');
 }
 
 function bad(what: string) {

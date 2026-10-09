@@ -161,13 +161,21 @@ export class Renderer {
    * Split an image into tiles and upload each one. If the browser refuses a tile, try again with
    * smaller tiles before giving up. The caller still owns `source`.
    */
-  async upload(id: string, source: ImageBitmap | HTMLImageElement, width: number, height: number) {
+  async upload(
+    id: string,
+    source: ImageBitmap | HTMLImageElement,
+    width: number,
+    height: number,
+    /** Size the layer is drawn at, in layer pixels, when `source` is a smaller copy. */
+    layerWidth = width,
+    layerHeight = height,
+  ) {
     let tileSize = Math.min(MAX_TILE, this.maxTextureSize);
     for (;;) {
       try {
-        const tiles = this.uploadTiles(source, width, height, tileSize);
+        const tiles = this.uploadTiles(source, width, height, tileSize, layerWidth / width, layerHeight / height);
         this.remove(id);
-        this.layers.set(id, { width, height, tiles });
+        this.layers.set(id, { width: layerWidth, height: layerHeight, tiles });
         return;
       } catch (err) {
         if (tileSize <= MIN_TILE) throw err;
@@ -181,7 +189,14 @@ export class Renderer {
    * Uploading ImageBitmap crops directly fails in Firefox ("Requested size at this level is
    * unsupported") and leaves every texture empty, which draws as black.
    */
-  private uploadTiles(source: ImageBitmap | HTMLImageElement, width: number, height: number, tileSize: number): Tile[] {
+  private uploadTiles(
+    source: ImageBitmap | HTMLImageElement,
+    width: number,
+    height: number,
+    tileSize: number,
+    scaleX: number,
+    scaleY: number,
+  ): Tile[] {
     const gl = this.gl;
     const cols = splits(width, tileSize);
     const rows = splits(height, tileSize);
@@ -203,7 +218,8 @@ export class Renderer {
           const texture = gl.createTexture()!;
           tiles.push({
             texture,
-            rect: { x: col.start, y: row.start, width: col.size, height: row.size },
+            // In layer pixels: a smaller copy is stretched back to the original's size.
+            rect: { x: col.start * scaleX, y: row.start * scaleY, width: col.size * scaleX, height: row.size * scaleY },
             uv: [
               (col.start - col.src) / col.srcSize,
               (row.start - row.src) / row.srcSize,

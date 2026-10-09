@@ -32,7 +32,7 @@ function sample(): Project {
         id: 'base',
         name: 'Survey base',
         file: 'layers/base.jpg',
-        phoneFile: null,
+        phoneFile: 'layers-phone/base.jpg',
         width: 4000,
         height: 3000,
         order: 1,
@@ -80,16 +80,40 @@ describe('readProject', () => {
 describe('zip round trip', () => {
   it('keeps the project, images and thumbnail', async () => {
     const project = sample();
+    project.layers[1].phoneFile = null;
     const images = new Map([
       ['roads', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' })],
       ['base', new Blob([new Uint8Array([9, 8, 7, 6])], { type: 'image/jpeg' })],
     ]);
-    const zip = await buildZip(project, images, new Blob([new Uint8Array([5])], { type: 'image/png' }));
+    const zip = await buildZip(project, images, new Map(), new Blob([new Uint8Array([5])], { type: 'image/png' }));
     const back = await readZip(zip);
     expect(back.project).toEqual(project);
     expect([...new Uint8Array(await back.images.get('base')!.arrayBuffer())]).toEqual([9, 8, 7, 6]);
     expect(back.images.get('roads')!.type).toBe('image/png');
     expect(back.thumbnail).not.toBeNull();
+    expect(back.phoneImages.size).toBe(0);
+  });
+
+  it('carries phone copies, and drops a reference to a missing one', async () => {
+    const project = sample();
+    const images = new Map([
+      ['roads', new Blob([new Uint8Array([1])], { type: 'image/png' })],
+      ['base', new Blob([new Uint8Array([2])], { type: 'image/jpeg' })],
+    ]);
+    const phone = new Map([['base', new Blob([new Uint8Array([3, 3])], { type: 'image/jpeg' })]]);
+    const back = await readZip(await buildZip(project, images, phone, null));
+    expect([...new Uint8Array(await back.phoneImages.get('base')!.arrayBuffer())]).toEqual([3, 3]);
+    expect(back.project.layers[1].phoneFile).toBe('layers-phone/base.jpg');
+
+    const { zipSync, strToU8 } = await import('fflate');
+    const noPhone = zipSync({
+      'project.json': strToU8(JSON.stringify(project)),
+      'layers/roads.png': new Uint8Array([1]),
+      'layers/base.jpg': new Uint8Array([2]),
+    });
+    const imported = await readZip(new Blob([noPhone]));
+    expect(imported.project.layers[1].phoneFile).toBeNull();
+    expect(imported.phoneImages.size).toBe(0);
   });
 
   it('reports a zip without a project', async () => {

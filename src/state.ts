@@ -24,6 +24,10 @@ export interface Layer {
   file: Blob;
   /** Whether `file` is already in on-device storage, so a save can skip it. */
   stored: boolean;
+  /** Smaller copy for phones, or null when the original is small enough (or none was made yet). */
+  phoneFile: Blob | null;
+  /** Whether `phoneFile` is already in on-device storage. */
+  phoneStored: boolean;
   thumbnail: string;
   points: ControlPoint[];
   pending: PendingPoint | null;
@@ -172,7 +176,7 @@ export function toProject(modified: string): Project {
       id: l.id,
       name: l.name,
       file: `layers/${l.id}.${IMAGE_EXTENSIONS[l.file.type] ?? 'png'}`,
-      phoneFile: null,
+      phoneFile: l.phoneFile ? `layers-phone/${l.id}.${IMAGE_EXTENSIONS[l.phoneFile.type] ?? 'png'}` : null,
       width: l.width,
       height: l.height,
       order,
