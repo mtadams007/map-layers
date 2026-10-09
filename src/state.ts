@@ -1,4 +1,5 @@
-import { fit, IDENTITY, outliers, type FitResult, type Transform, type Vec } from './fit';
+import { fit, IDENTITY, MIN_POINTS, outliers, type FitMode, type FitResult, type Transform, type Vec } from './fit';
+import { DEFAULT_APPEARANCE, FORMAT_VERSION, IMAGE_EXTENSIONS, type Project } from './project';
 
 export interface ControlPoint {
   id: number;
@@ -19,9 +20,14 @@ export interface Layer {
   name: string;
   width: number;
   height: number;
+  /** The original image file, kept for saving and export. */
+  file: Blob;
+  /** Whether `file` is already in on-device storage, so a save can skip it. */
+  stored: boolean;
   thumbnail: string;
   points: ControlPoint[];
   pending: PendingPoint | null;
+  fitMode: FitMode;
   visible: boolean;
   opacity: number;
 }
@@ -31,17 +37,30 @@ export interface LoadingLayer {
   name: string;
 }
 
+export type Screen = 'library' | 'editor';
 export type Mode = 'create' | 'view';
 export type CreateView = 'side' | 'overlay';
+
+/** The open map, apart from its layers. */
+export interface MapInfo {
+  id: string;
+  name: string;
+  created: string;
+}
 
 export interface FitSummary {
   similarity: FitResult | null;
   affine: FitResult | null;
+  /** The fit in use: affine when chosen and possible, otherwise similarity. */
+  active: FitResult | null;
   outliers: boolean[];
 }
 
-/** Everything the screen shows. Nothing here is saved yet; that comes in phase 2. */
 export interface AppState {
+  screen: Screen;
+  map: MapInfo | null;
+  /** The open map has changes that aren't saved. */
+  dirty: boolean;
   /** Draw order: index 0 is drawn on top. */
   layers: Layer[];
   loading: LoadingLayer[];
@@ -54,6 +73,9 @@ export interface AppState {
 }
 
 export const state: AppState = {
+  screen: 'library',
+  map: null,
+  dirty: false,
   layers: [],
   loading: [],
   baseId: null,
@@ -70,6 +92,12 @@ const listeners = new Set<Listener>();
 export function changed() {
   fitCache.clear();
   for (const l of listeners) l();
+}
+
+/** The map itself changed and needs saving. */
+export function edited() {
+  state.dirty = true;
+  changed();
 }
 
 export function onChange(l: Listener) {
@@ -94,14 +122,22 @@ export function fitSummary(layer: Layer): FitSummary {
   let summary = fitCache.get(layer.id);
   if (!summary) {
     const similarity = fit('similarity', layer.points);
+    const affine = fit('affine', layer.points);
+    const active = layer.fitMode === 'affine' && affine ? affine : similarity;
     summary = {
       similarity,
-      affine: fit('affine', layer.points),
-      outliers: similarity ? outliers(similarity.errors) : layer.points.map(() => false),
+      affine,
+      active,
+      outliers: active ? outliers(active.errors) : layer.points.map(() => false),
     };
     fitCache.set(layer.id, summary);
   }
   return summary;
+}
+
+/** Whether the affine option can be chosen for this layer. */
+export function canUseAffine(layer: Layer): boolean {
+  return layer.points.length >= MIN_POINTS.affine;
 }
 
 /** Drop the cached fit for a layer whose points moved, without re-rendering the panels. */
@@ -112,11 +148,41 @@ export function pointsMoved(layer: Layer) {
 /** Layer pixels → base pixels, or null while the layer has too few points. */
 export function transformOf(layer: Layer): Transform | null {
   if (layer.id === state.baseId) return IDENTITY;
-  return fitSummary(layer).similarity?.transform ?? null;
+  return fitSummary(layer).active?.transform ?? null;
 }
 
 let nextPointId = 1;
 
 export function newPointId(): number {
   return nextPointId++;
+}
+
+/** The open map as a project.json. Half-placed points are not saved. */
+export function toProject(modified: string): Project {
+  const map = state.map!;
+  return {
+    formatVersion: FORMAT_VERSION,
+    id: map.id,
+    name: map.name,
+    created: map.created,
+    modified,
+    viewOnly: false,
+    baseLayerId: state.baseId,
+    layers: state.layers.map((l, order) => ({
+      id: l.id,
+      name: l.name,
+      file: `layers/${l.id}.${IMAGE_EXTENSIONS[l.file.type] ?? 'png'}`,
+      phoneFile: null,
+      width: l.width,
+      height: l.height,
+      order,
+      visible: l.visible,
+      alignment: {
+        mode: l.fitMode,
+        points: l.points.map((p) => ({ layer: { ...p.layer }, base: { ...p.base } })),
+        transform: transformOf(l),
+      },
+      appearance: { ...DEFAULT_APPEARANCE, opacity: l.opacity },
+    })),
+  };
 }

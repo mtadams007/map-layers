@@ -54,6 +54,15 @@ body {
   grid-template-columns: 0 1fr 340px;
 }
 
+#app[data-screen='library'] {
+  grid-template-columns: 0 1fr 0;
+}
+
+#app[data-screen='library'] .sidebar,
+#app[data-screen='library'] .panel {
+  display: none;
+}
+
 button {
   font: inherit;
   color: inherit;
@@ -777,4 +786,205 @@ button.link {
 
 .fatal p {
   color: var(--muted);
+}
+
+/* ---- Editor header ---- */
+
+.back {
+  font-size: 15px;
+}
+
+.name-input {
+  font: inherit;
+  font-weight: 600;
+  font-size: 18px;
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: none;
+  min-width: 120px;
+  width: 280px;
+}
+
+.name-input:hover {
+  border-color: var(--line);
+}
+
+.name-input:focus {
+  border-color: var(--blue);
+  outline: none;
+  background: var(--surface);
+}
+
+.save-status {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.save-status.unsaved {
+  color: var(--orange);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.layer-name-input {
+  font: inherit;
+  font-weight: 500;
+  width: 100%;
+  border: 1px solid var(--blue);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+/* ---- Library ---- */
+
+.library {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg);
+  padding: 32px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.library-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.library-head h1 {
+  font-size: 32px;
+}
+
+.library-empty {
+  padding: 40px 0;
+  display: grid;
+  gap: 8px;
+}
+
+.library-empty p {
+  margin: 0;
+}
+
+.map-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.map-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.map-card:hover {
+  border-color: var(--blue);
+}
+
+.map-thumb {
+  width: 112px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--bg);
+  flex: none;
+}
+
+.map-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.map-name {
+  font-weight: 600;
+  font-size: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-button {
+  font-size: 16px;
+  letter-spacing: 1px;
+}
+
+.menu {
+  position: absolute;
+  right: 10px;
+  top: calc(100% - 8px);
+  z-index: 5;
+  display: grid;
+  min-width: 220px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.menu button {
+  border: 0;
+  background: none;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.menu button:hover {
+  background: var(--bg);
+}
+
+.menu .danger {
+  color: #b42318;
+}
+
+.notice {
+  margin-top: auto;
+  max-width: 640px;
+  padding: 16px 20px;
+  background: var(--blue-soft);
+  border-radius: var(--radius);
+}
+
+.notice p {
+  margin: 4px 0 0;
+}
+
+/* ---- Busy overlay ---- */
+
+.busy {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(243, 244, 246, 0.7);
+}
+
+.busy-box {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 24px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+.busy[hidden] {
+  display: none;
 }

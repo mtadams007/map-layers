@@ -8,7 +8,7 @@ Read `docs/ARCHITECTURE.md` for the full design and `docs/wireframes/` for the a
 
 - **Never commit or push.** No `git commit`, `git push`, `gh pr create` or `gh pr merge`, even if asked in passing; the owner does all of these. This is enforced by `.claude/settings.json`; don't change that file.
 - **Don't write code until the owner explicitly says to start.** Answering a planning question is not a go-ahead.
-- **Build one phase at a time and stop for review at the end of each.** Start with phase 1 only (see the roadmap in the architecture doc). Don't start the next phase without the owner's go-ahead.
+- **Build one phase at a time and stop for review at the end of each.** Phases 1 and 2 are built (see the roadmap in the architecture doc). Don't start the next phase without the owner's go-ahead.
 - **Images and project data never leave the device.** No analytics, no telemetry, no third-party scripts or fonts loaded at runtime, no network calls except loading the app's own files. Bundle every dependency. The app must work fully in airplane mode once installed.
 - **Keep dependencies small.** Plain TypeScript + Vite, WebGL for rendering, fflate for zip. No UI framework unless there is a clear need; ask first.
 - **Version the project file from day one.** `project.json` carries `formatVersion` (starts at 1); the importer must handle older versions.
@@ -22,11 +22,14 @@ Read `docs/ARCHITECTURE.md` for the full design and `docs/wireframes/` for the a
 - **Phone layer panel:** one row per layer (visibility, opacity slider, percentage, expand button). Expanding a row shows brightness and recolor swatches.
 - **Images stay at their original size on laptop and phone for now.** No automatic downscaling on import or for phones. The renderer splits large images into tiles so any size within memory can be drawn. The largest sample is the base map, 11,871 × 8,951 px (JPEG); overlay layers are PNGs with transparent backgrounds.
 - **Fitting:** similarity by default from 2 points; affine is a per-layer toggle available from 3 points. Show the average (RMS) error for both modes and each point's error; highlight outliers.
+- **Saving uses a Save button, not autosave.** Show when there are unsaved changes, and warn before leaving a map with unsaved changes.
+- **Map and layer names are editable** in Create mode.
+- **Opacity and visibility are saved with the map,** whether changed in Create or View. Separate per-device viewer settings with "Reset to defaults" stay in phase 4.
 
 ## Hosting
 
-- Cloudflare Pages, free plan, at `maps.opicartes.com` (subdomain name still to be confirmed).
-- `opicartes.com` is registered and managed in Cloudflare and is used for email by another app. Only add the `maps` subdomain through the Pages project's Custom domains screen. Never change nameservers, the root domain, or any MX/SPF/DKIM/DMARC records.
+- Cloudflare Workers (static assets), free plan, configured in `wrangler.jsonc` to serve `./dist`, at `maps.opicartes.com` (subdomain name still to be confirmed). This replaces the Pages plan in the architecture doc.
+- `opicartes.com` is registered and managed in Cloudflare and is used for email by another app. Only add the `maps` subdomain as a Custom Domain on the Worker (Settings → Domains & Routes). Never change nameservers, the root domain, or any MX/SPF/DKIM/DMARC records.
 
 ## Open questions
 

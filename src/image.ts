@@ -12,7 +12,7 @@ export const ACCEPTED_TYPES = ['image/png', 'image/jpeg'];
  * Decode an image file at full size. Very large images can be refused by createImageBitmap in some
  * browsers, so fall back to an <img> element, which the browser decodes lazily as it is read.
  */
-export async function decodeImage(file: File): Promise<DecodedImage> {
+export async function decodeImage(file: Blob, name: string): Promise<DecodedImage> {
   try {
     const bitmap = await createImageBitmap(file, { premultiplyAlpha: 'premultiply' });
     return {
@@ -35,13 +35,13 @@ export async function decodeImage(file: File): Promise<DecodedImage> {
       };
     } catch {
       URL.revokeObjectURL(url);
-      throw new Error(`Couldn't read ${file.name}. Is it a PNG or JPEG?`);
+      throw new Error(`Couldn't read ${name}. Is it a PNG or JPEG?`);
     }
   }
 }
 
-/** A small PNG data URL for the layer list. */
-export async function thumbnail(image: DecodedImage, maxSide = 112): Promise<string> {
+/** A small PNG data URL for the layer list and the map thumbnail. */
+export async function thumbnail(image: DecodedImage, maxSide = 320): Promise<string> {
   const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
   const w = Math.max(1, Math.round(image.width * scale));
   const h = Math.max(1, Math.round(image.height * scale));
