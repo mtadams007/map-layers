@@ -20,6 +20,7 @@ import {
 import { deleteProject, getImages, getProject, listProjects, renameProject, saveProject, type StoredProject } from '../storage';
 import { composeThumbnail } from '../thumbnail';
 import { buildZip, readZip } from '../zip';
+import { newId } from '../id';
 import { esc } from './html';
 import { libraryHtml } from './library';
 import { forgetCamera, Pane, resetBaseCamera, type PaneKind } from './panes';
@@ -105,7 +106,7 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
 
   function newMap() {
     resetEditor();
-    state.map = { id: crypto.randomUUID(), name: UNTITLED, created: new Date().toISOString() };
+    state.map = { id: newId(), name: UNTITLED, created: new Date().toISOString() };
     state.screen = 'editor';
     state.mode = 'create';
     changed();
@@ -332,7 +333,7 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
 
   async function addLayer(file: File) {
     const image = await decodeImage(file, file.name);
-    const id = crypto.randomUUID();
+    const id = newId();
     try {
       await renderer.upload(id, image.source, image.width, image.height);
       const layer: Layer = {

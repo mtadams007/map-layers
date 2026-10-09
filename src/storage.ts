@@ -1,5 +1,7 @@
 // The on-device library, kept in IndexedDB. One record per map (its project.json and thumbnail)
 // plus one record per layer image. The exported zip, not this, is the real backup.
+// Images are stored as raw bytes, not Blobs: Safari on iPhone refuses to store Blobs in IndexedDB
+// ("BlobURLs are not yet supported"). Records saved earlier as Blobs are still read.
 
 import type { Project } from './project';
 
@@ -14,11 +16,40 @@ export interface StoredProject {
   thumbnail: Blob | null;
 }
 
-interface StoredImage {
+/** A file as stored: its bytes and media type. */
+interface StoredFile {
+  data: ArrayBuffer;
+  type: string;
+}
+
+interface ProjectRecord {
+  id: string;
+  project: Project;
+  /** Older records hold a Blob. */
+  thumbnail: StoredFile | Blob | null;
+}
+
+interface ImageRecord {
   /** `${projectId}/${layerId}` */
   key: string;
   projectId: string;
-  blob: Blob;
+  file?: StoredFile;
+  /** Older records hold a Blob instead of `file`. */
+  blob?: Blob;
+}
+
+async function toStored(blob: Blob): Promise<StoredFile> {
+  return { data: await blob.arrayBuffer(), type: blob.type };
+}
+
+function fromStored(f: StoredFile | Blob | null | undefined): Blob | null {
+  if (!f) return null;
+  if (f instanceof Blob) return f;
+  return new Blob([f.data], { type: f.type });
+}
+
+function toProject(rec: ProjectRecord): StoredProject {
+  return { id: rec.id, project: rec.project, thumbnail: fromStored(rec.thumbnail) };
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -65,13 +96,14 @@ function storageError(err: DOMException | null): Error {
 
 export async function listProjects(): Promise<StoredProject[]> {
   const tx = (await db()).transaction(PROJECTS);
-  const all = await request(tx.objectStore(PROJECTS).getAll() as IDBRequest<StoredProject[]>);
+  const all = (await request(tx.objectStore(PROJECTS).getAll() as IDBRequest<ProjectRecord[]>)).map(toProject);
   return all.sort((a, b) => b.project.modified.localeCompare(a.project.modified));
 }
 
 export async function getProject(id: string): Promise<StoredProject | undefined> {
   const tx = (await db()).transaction(PROJECTS);
-  return request(tx.objectStore(PROJECTS).get(id) as IDBRequest<StoredProject | undefined>);
+  const rec = await request(tx.objectStore(PROJECTS).get(id) as IDBRequest<ProjectRecord | undefined>);
+  return rec && toProject(rec);
 }
 
 export async function getImages(project: Project): Promise<Map<string, Blob>> {
@@ -79,8 +111,9 @@ export async function getImages(project: Project): Promise<Map<string, Blob>> {
   const store = tx.objectStore(IMAGES);
   const images = new Map<string, Blob>();
   for (const layer of project.layers) {
-    const rec = await request(store.get(`${project.id}/${layer.id}`) as IDBRequest<StoredImage | undefined>);
-    if (rec) images.set(layer.id, rec.blob);
+    const rec = await request(store.get(`${project.id}/${layer.id}`) as IDBRequest<ImageRecord | undefined>);
+    const blob = fromStored(rec?.file ?? rec?.blob);
+    if (blob) images.set(layer.id, blob);
   }
   return images;
 }
@@ -91,15 +124,20 @@ export async function getImages(project: Project): Promise<Map<string, Blob>> {
  * failed save leaves the previous version intact.
  */
 export async function saveProject(project: Project, newImages: Map<string, Blob>, thumbnail: Blob | null) {
+  // Read every file before opening the transaction: awaiting other work inside it would end it.
+  const files = new Map<string, StoredFile>();
+  for (const [layerId, blob] of newImages) files.set(layerId, await toStored(blob));
+  const thumb = thumbnail ? await toStored(thumbnail) : null;
+
   const tx = (await db()).transaction([PROJECTS, IMAGES], 'readwrite');
   const images = tx.objectStore(IMAGES);
-  for (const [layerId, blob] of newImages) {
-    images.put({ key: `${project.id}/${layerId}`, projectId: project.id, blob } satisfies StoredImage);
+  for (const [layerId, file] of files) {
+    images.put({ key: `${project.id}/${layerId}`, projectId: project.id, file } satisfies ImageRecord);
   }
   const keep = new Set(project.layers.map((l) => `${project.id}/${l.id}`));
   const keys = await request(images.index('projectId').getAllKeys(project.id));
   for (const key of keys) if (!keep.has(String(key))) images.delete(key);
-  tx.objectStore(PROJECTS).put({ id: project.id, project, thumbnail } satisfies StoredProject);
+  tx.objectStore(PROJECTS).put({ id: project.id, project, thumbnail: thumb } satisfies ProjectRecord);
   await done(tx);
   void requestPersistence();
 }
@@ -107,7 +145,7 @@ export async function saveProject(project: Project, newImages: Map<string, Blob>
 export async function renameProject(id: string, name: string) {
   const tx = (await db()).transaction(PROJECTS, 'readwrite');
   const store = tx.objectStore(PROJECTS);
-  const rec = await request(store.get(id) as IDBRequest<StoredProject | undefined>);
+  const rec = await request(store.get(id) as IDBRequest<ProjectRecord | undefined>);
   if (rec) {
     rec.project.name = name;
     rec.project.modified = new Date().toISOString();
