@@ -6,6 +6,8 @@ Read `docs/ARCHITECTURE.md` for the full design and `docs/wireframes/` for the a
 
 ## Working rules
 
+- **Never commit or push.** No `git commit`, `git push`, `gh pr create` or `gh pr merge`, even if asked in passing; the owner does all of these. This is enforced by `.claude/settings.json`; don't change that file.
+- **Don't write code until the owner explicitly says to start.** Answering a planning question is not a go-ahead.
 - **Build one phase at a time and stop for review at the end of each.** Start with phase 1 only (see the roadmap in the architecture doc). Don't start the next phase without the owner's go-ahead.
 - **Images and project data never leave the device.** No analytics, no telemetry, no third-party scripts or fonts loaded at runtime, no network calls except loading the app's own files. Bundle every dependency. The app must work fully in airplane mode once installed.
 - **Keep dependencies small.** Plain TypeScript + Vite, WebGL for rendering, fflate for zip. No UI framework unless there is a clear need; ask first.
@@ -18,6 +20,7 @@ Read `docs/ARCHITECTURE.md` for the full design and `docs/wireframes/` for the a
 - **Create mode is laptop-only.** Phones get the Library and View screens. Create mode is reachable on a phone only through "Edit alignment" in the library menu, and that entry may be removed.
 - **Layer order:** top of the list draws on top. Reordering happens in Create mode only.
 - **Phone layer panel:** one row per layer (visibility, opacity slider, percentage, expand button). Expanding a row shows brightness and recolor swatches.
+- **Images stay at their original size on laptop and phone for now.** No automatic downscaling on import or for phones. The renderer splits large images into tiles so any size within memory can be drawn. The largest sample is the base map, 11,871 × 8,951 px (JPEG); overlay layers are PNGs with transparent backgrounds.
 - **Fitting:** similarity by default from 2 points; affine is a per-layer toggle available from 3 points. Show the average (RMS) error for both modes and each point's error; highlight outliers.
 
 ## Hosting

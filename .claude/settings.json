@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git commit *)",
+      "Bash(git commit)",
+      "Bash(git push *)",
+      "Bash(git push)",
+      "Bash(git * commit *)",
+      "Bash(git * push *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr merge *)",
+      "Edit(.claude/settings.json)",
+      "Edit(.claude/settings.local.json)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "c=$(jq -r '.tool_input.command // \"\"'); if printf '%s' \"$c\" | grep -Eq '(^|[^[:alnum:]_])git([^[:alnum:]_]|$)' && printf '%s' \"$c\" | grep -Eq '(^|[^[:alnum:]_-])(commit|push)([^[:alnum:]_-]|$)' || printf '%s' \"$c\" | grep -Eq '(^|[^[:alnum:]_])gh[[:space:]]+pr[[:space:]]+(create|merge)'; then echo 'Blocked by project rule: Claude may not commit or push in map-layers. The owner does this.' >&2; exit 2; fi",
+            "statusMessage": "Checking for git commit/push"
+          }
+        ]
+      }
+    ]
+  }
+}
