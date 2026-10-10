@@ -33,6 +33,10 @@ Read `docs/ARCHITECTURE.md` for the full design and `docs/wireframes/` for the a
 - Cloudflare Workers (static assets), free plan, configured in `wrangler.jsonc` to serve `./dist`, at `maps.opicartes.com` (subdomain name still to be confirmed). This replaces the Pages plan in the architecture doc.
 - `opicartes.com` is registered and managed in Cloudflare and is used for email by another app. Only add the `maps` subdomain as a Custom Domain on the Worker (Settings → Domains & Routes). Never change nameservers, the root domain, or any MX/SPF/DKIM/DMARC records.
 
+## Backlog (not scheduled; don't build until the owner asks)
+
+- **Export as JPEG.** Requested 2026-10-09. Details to agree before building: whether it exports the current view or the whole map, at what resolution, and whether it's available on phones.
+
 ## Open questions
 
 See the checklist at the end of `docs/ARCHITECTURE.md`. The biggest unknown is the real layer image sizes; test with the owner's sample files when available.
