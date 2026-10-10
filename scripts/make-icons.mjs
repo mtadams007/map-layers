@@ -1,5 +1,7 @@
-// Draws the app icons into public/: a magnifying glass on a dark background, its blue lens
-// showing a skull, like seeing what lies beneath the surface.
+// Draws the app's icons into public/. The mark is a magnifying glass whose blue lens shows a skull,
+// like seeing what lies beneath the surface.
+// - Home-screen icons: a white glass on a dark square (phones need a filled background).
+// - logo.png (header home button) and favicon.png: a black glass on a transparent background.
 // No dependencies. Run with `node scripts/make-icons.mjs` after changing the design.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -8,7 +10,7 @@ import { deflateSync } from 'node:zlib';
 const DARK = [29, 32, 39];
 const BLUE = [47, 111, 228];
 const WHITE = [255, 255, 255];
-const LENS = BLUE;
+const BLACK = [17, 17, 17];
 
 // Shapes in a unit square (0–1), y pointing down.
 const circle = (x, y, cx, cy, r) => Math.hypot(x - cx, y - cy) <= r;
@@ -33,7 +35,8 @@ function triangle(x, y, [ax, ay], [bx, by], [cx, cy]) {
 }
 
 // The glass: lens centred at (LX, LY), handle toward the bottom right.
-const LX = 0.42, LY = 0.42, R_OUT = 0.3, R_IN = 0.235;
+const LX = 0.42, LY = 0.42, R_OUT = 0.3;
+const HANDLE_FROM = 0.64, HANDLE_TO = 0.84;
 
 function inSkull(x, y) {
   const head = circle(x, y, LX, LY - 0.035, 0.135) || roundRect(x, y, LX - 0.085, LY + 0.02, LX + 0.085, LY + 0.135, 0.035);
@@ -46,59 +49,59 @@ function inSkull(x, y) {
 }
 
 /**
- * Colour of the pixel at (x, y) in a unit square. `pad` shrinks the artwork toward the centre
- * (maskable icons need it to stay inside the safe zone).
+ * The mark as a colour function over the unit square; null means transparent.
+ * `stroke` is the width of the rim and handle.
  */
-function shade(x, y, pad) {
-  const u = 0.5 + (x - 0.5) / pad;
-  const v = 0.5 + (y - 0.5) / pad;
-  if (inSkull(u, v)) return WHITE;
-  if (circle(u, v, LX, LY, R_IN)) return LENS;
-  if (circle(u, v, LX, LY, R_OUT)) return WHITE;
-  if (capsule(u, v, 0.64, 0.64, 0.84, 0.84, 0.065)) return WHITE;
-  return DARK;
+function mark({ glass, background, stroke = 0.065 }) {
+  return (x, y) => {
+    if (inSkull(x, y)) return WHITE;
+    if (circle(x, y, LX, LY, R_OUT - stroke)) return BLUE;
+    if (circle(x, y, LX, LY, R_OUT)) return glass;
+    if (capsule(x, y, HANDLE_FROM, HANDLE_FROM, HANDLE_TO, HANDLE_TO, stroke)) return glass;
+    return background;
+  };
 }
 
-function mix(a, b, t) {
-  return a.map((c, i) => Math.round(c + (b[i] - c) * t));
+/** The part of the unit square the glass covers, with a small margin, for the cropped logo. */
+function tightBox(stroke) {
+  const lo = LX - R_OUT - 0.01;
+  const hi = HANDLE_TO + stroke + 0.01;
+  return { x0: lo, y0: lo, size: hi - lo };
 }
 
-function icon(size, { pad = 1, round = false } = {}) {
+/**
+ * Render `design` into a PNG of `size` px. `pad` shrinks the whole square toward the centre
+ * (maskable icons); `box` crops to a region instead.
+ */
+function render(design, size, { pad = 1, box = null } = {}) {
   const SS = 4; // supersampling for smooth edges
   const raw = Buffer.alloc((size * 4 + 1) * size);
   for (let py = 0; py < size; py++) {
     raw[py * (size * 4 + 1)] = 0;
     for (let px = 0; px < size; px++) {
-      let r = 0, g = 0, b = 0, a = 0;
+      let r = 0, g = 0, b = 0, hits = 0;
       for (let sy = 0; sy < SS; sy++) {
         for (let sx = 0; sx < SS; sx++) {
-          const x = (px + (sx + 0.5) / SS) / size;
-          const y = (py + (sy + 0.5) / SS) / size;
-          // Rounded corners only for the favicon; platforms mask the others themselves.
-          if (round && cornerOut(x, y, 0.2)) continue;
-          const c = shade(x, y, pad);
+          const fx = (px + (sx + 0.5) / SS) / size;
+          const fy = (py + (sy + 0.5) / SS) / size;
+          const u = box ? box.x0 + fx * box.size : 0.5 + (fx - 0.5) / pad;
+          const v = box ? box.y0 + fy * box.size : 0.5 + (fy - 0.5) / pad;
+          const c = design(u, v);
+          if (!c) continue;
           r += c[0];
           g += c[1];
           b += c[2];
-          a += 255;
+          hits++;
         }
       }
-      const n = SS * SS;
       const o = py * (size * 4 + 1) + 1 + px * 4;
-      const cover = a / 255;
-      raw[o] = cover ? Math.round(r / cover) : 0;
-      raw[o + 1] = cover ? Math.round(g / cover) : 0;
-      raw[o + 2] = cover ? Math.round(b / cover) : 0;
-      raw[o + 3] = Math.round(a / n);
+      raw[o] = hits ? Math.round(r / hits) : 0;
+      raw[o + 1] = hits ? Math.round(g / hits) : 0;
+      raw[o + 2] = hits ? Math.round(b / hits) : 0;
+      raw[o + 3] = Math.round((hits / (SS * SS)) * 255);
     }
   }
   return png(size, size, raw);
-}
-
-function cornerOut(x, y, r) {
-  const cx = Math.min(Math.max(x, r), 1 - r);
-  const cy = Math.min(Math.max(y, r), 1 - r);
-  return Math.hypot(x - cx, y - cy) > r;
 }
 
 function png(w, h, raw) {
@@ -134,11 +137,19 @@ function png(w, h, raw) {
   ]);
 }
 
+const homeScreen = mark({ glass: WHITE, background: DARK });
+const logo = mark({ glass: BLACK, background: null });
+// Thicker rim and handle so the favicon still reads at 16 px.
+const FAVICON_STROKE = 0.085;
+const favicon = mark({ glass: BLACK, background: null, stroke: FAVICON_STROKE });
+
 const out = new URL('../public/', import.meta.url);
 mkdirSync(out, { recursive: true });
-writeFileSync(new URL('icon-192.png', out), icon(192));
-writeFileSync(new URL('icon-512.png', out), icon(512));
-writeFileSync(new URL('icon-maskable-512.png', out), icon(512, { pad: 0.68 }));
-writeFileSync(new URL('apple-touch-icon.png', out), icon(180));
-writeFileSync(new URL('favicon.png', out), icon(64, { round: true }));
+writeFileSync(new URL('icon-192.png', out), render(homeScreen, 192));
+writeFileSync(new URL('icon-512.png', out), render(homeScreen, 512));
+// Maskable: Android may crop to a circle of 40% radius, so the artwork is shrunk to fit inside it.
+writeFileSync(new URL('icon-maskable-512.png', out), render(homeScreen, 512, { pad: 0.68 }));
+writeFileSync(new URL('apple-touch-icon.png', out), render(homeScreen, 180));
+writeFileSync(new URL('logo.png', out), render(logo, 144, { box: tightBox(0.065) }));
+writeFileSync(new URL('favicon.png', out), render(favicon, 64, { box: tightBox(FAVICON_STROKE) }));
 console.log('Icons written to public/');

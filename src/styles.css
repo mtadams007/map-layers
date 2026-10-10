@@ -1233,7 +1233,6 @@ html {
 .app-logo {
   width: 34px;
   height: 34px;
-  border-radius: 8px;
   display: block;
 }
 
@@ -1244,7 +1243,17 @@ html {
   border-radius: 8px;
 }
 
-.home-button:hover .app-logo,
-.home-button:focus-visible .app-logo {
-  box-shadow: 0 0 0 3px var(--blue-soft), 0 0 0 4px var(--blue);
+.home-button {
+  padding: 4px;
+  margin: -4px;
+}
+
+.home-button:hover,
+.home-button:focus-visible {
+  background: var(--bg);
+  outline: none;
+}
+
+.home-button:focus-visible {
+  box-shadow: 0 0 0 2px var(--blue);
 }
