@@ -1221,3 +1221,30 @@ html {
   bottom: calc(80px + env(safe-area-inset-bottom));
   max-width: calc(100% - 32px);
 }
+
+/* ---- App icon in the header ---- */
+
+.brand-home {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: block;
+}
+
+.home-button {
+  border: 0;
+  padding: 0;
+  background: none;
+  border-radius: 8px;
+}
+
+.home-button:hover .app-logo,
+.home-button:focus-visible .app-logo {
+  box-shadow: 0 0 0 3px var(--blue-soft), 0 0 0 4px var(--blue);
+}

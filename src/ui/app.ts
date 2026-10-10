@@ -644,14 +644,14 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
     if (state.screen === 'library') {
       if (topbarKey !== 'library') {
         topbarKey = 'library';
-        topbar.innerHTML = `<span class="project-name">Map Layers</span>`;
+        topbar.innerHTML = `<span class="brand-home"><img class="app-logo" src="/icon-192.png" alt=""><span class="project-name">Map Layers</span></span>`;
       }
       return;
     }
     if (topbarKey !== 'editor') {
       topbarKey = 'editor';
       topbar.innerHTML = `
-        <button class="link back" data-action="library">‹ Library</button>
+        <button class="home-button" data-action="library" title="Back to your maps" aria-label="Back to your maps"><img class="app-logo" src="/icon-192.png" alt=""></button>
         <input class="name-input" id="map-name" aria-label="Map name" spellcheck="false">
         <div class="segmented" role="tablist" aria-label="Mode">
           <button data-action="mode" data-value="create">Create</button>
