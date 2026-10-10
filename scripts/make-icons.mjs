@@ -1,15 +1,48 @@
-// Draws the app icons into public/: three stacked map layers on blue. No dependencies.
-// Run with `node scripts/make-icons.mjs` after changing the design.
+// Draws the app icons into public/: a magnifying glass on a dark background, its blue lens
+// showing a skull, like seeing what lies beneath the surface.
+// No dependencies. Run with `node scripts/make-icons.mjs` after changing the design.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 
+const DARK = [29, 32, 39];
 const BLUE = [47, 111, 228];
 const WHITE = [255, 255, 255];
+const LENS = BLUE;
 
-/** A flattened square (a map sheet seen at an angle), centred at cx, cy. */
-function inSheet(x, y, cx, cy, w, h) {
-  return Math.abs(x - cx) / w + Math.abs(y - cy) / h <= 1;
+// Shapes in a unit square (0–1), y pointing down.
+const circle = (x, y, cx, cy, r) => Math.hypot(x - cx, y - cy) <= r;
+
+/** Within `r` of the line segment from (ax, ay) to (bx, by): a bar with round ends. */
+function capsule(x, y, ax, ay, bx, by, r) {
+  const dx = bx - ax, dy = by - ay;
+  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(x - (ax + t * dx), y - (ay + t * dy)) <= r;
+}
+
+function roundRect(x, y, x0, y0, x1, y1, r) {
+  const cx = Math.min(Math.max(x, x0 + r), x1 - r);
+  const cy = Math.min(Math.max(y, y0 + r), y1 - r);
+  return x >= x0 && x <= x1 && y >= y0 && y <= y1 && Math.hypot(x - cx, y - cy) <= r;
+}
+
+function triangle(x, y, [ax, ay], [bx, by], [cx, cy]) {
+  const side = (px, py, qx, qy) => (x - qx) * (py - qy) - (px - qx) * (y - qy);
+  const d1 = side(ax, ay, bx, by), d2 = side(bx, by, cx, cy), d3 = side(cx, cy, ax, ay);
+  return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
+}
+
+// The glass: lens centred at (LX, LY), handle toward the bottom right.
+const LX = 0.42, LY = 0.42, R_OUT = 0.3, R_IN = 0.235;
+
+function inSkull(x, y) {
+  const head = circle(x, y, LX, LY - 0.035, 0.135) || roundRect(x, y, LX - 0.085, LY + 0.02, LX + 0.085, LY + 0.135, 0.035);
+  if (!head) return false;
+  const eyes = circle(x, y, LX - 0.055, LY, 0.04) || circle(x, y, LX + 0.055, LY, 0.04);
+  const nose = triangle(x, y, [LX - 0.022, LY + 0.075], [LX + 0.022, LY + 0.075], [LX, LY + 0.04]);
+  // Gaps between the teeth, along the bottom of the jaw.
+  const teeth = y > LY + 0.1 && [-0.04, 0, 0.04].some((dx) => Math.abs(x - (LX + dx)) < 0.009);
+  return !(eyes || nose || teeth);
 }
 
 /**
@@ -19,19 +52,11 @@ function inSheet(x, y, cx, cy, w, h) {
 function shade(x, y, pad) {
   const u = 0.5 + (x - 0.5) / pad;
   const v = 0.5 + (y - 0.5) / pad;
-  // Bottom to top: each sheet is drawn over the ones below it, with a blue gap as an outline.
-  const sheets = [
-    { cy: 0.66, alpha: 0.45 },
-    { cy: 0.53, alpha: 0.7 },
-    { cy: 0.4, alpha: 1 },
-  ];
-  let colour = BLUE;
-  for (const s of sheets) {
-    if (inSheet(u, v, 0.5, s.cy, 0.36, 0.2)) {
-      colour = inSheet(u, v, 0.5, s.cy, 0.33, 0.17) ? mix(BLUE, WHITE, s.alpha) : BLUE;
-    }
-  }
-  return colour;
+  if (inSkull(u, v)) return WHITE;
+  if (circle(u, v, LX, LY, R_IN)) return LENS;
+  if (circle(u, v, LX, LY, R_OUT)) return WHITE;
+  if (capsule(u, v, 0.64, 0.64, 0.84, 0.84, 0.065)) return WHITE;
+  return DARK;
 }
 
 function mix(a, b, t) {
@@ -113,7 +138,7 @@ const out = new URL('../public/', import.meta.url);
 mkdirSync(out, { recursive: true });
 writeFileSync(new URL('icon-192.png', out), icon(192));
 writeFileSync(new URL('icon-512.png', out), icon(512));
-writeFileSync(new URL('icon-maskable-512.png', out), icon(512, { pad: 0.78 }));
+writeFileSync(new URL('icon-maskable-512.png', out), icon(512, { pad: 0.68 }));
 writeFileSync(new URL('apple-touch-icon.png', out), icon(180));
 writeFileSync(new URL('favicon.png', out), icon(64, { round: true }));
 console.log('Icons written to public/');
