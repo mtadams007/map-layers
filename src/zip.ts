@@ -12,6 +12,7 @@ const MAX_ZIP_BYTES = 1024 * 1024 * 1024;
 export async function buildZip(
   project: Project,
   images: Map<string, Blob>,
+  /** Phone copies, keyed by their path in the zip. */
   phoneImages: Map<string, Blob>,
   thumbnail: Blob | null,
 ): Promise<Blob> {
@@ -23,9 +24,11 @@ export async function buildZip(
     const blob = images.get(layer.id);
     if (!blob) throw new Error(`The image for "${layer.name}" is missing, so the map can't be exported.`);
     files[layer.file] = [await bytes(blob), { level: 0 }];
-    const phone = layer.phoneFile ? phoneImages.get(layer.id) : undefined;
-    if (layer.phoneFile && !phone) throw new Error(`The phone copy of "${layer.name}" is missing, so the map can't be exported.`);
-    if (layer.phoneFile && phone) files[layer.phoneFile] = [await bytes(phone), { level: 0 }];
+    for (const copy of layer.phoneCopies) {
+      const phone = phoneImages.get(copy.file);
+      if (!phone) throw new Error(`A phone copy of "${layer.name}" is missing, so the map can't be exported.`);
+      files[copy.file] = [await bytes(phone), { level: 0 }];
+    }
   }
   const zipped = zipSync(files);
   return new Blob([zipped as Uint8Array<ArrayBuffer>], { type: 'application/zip' });
@@ -35,7 +38,7 @@ export interface ImportedProject {
   project: Project;
   /** Original image per layer id. */
   images: Map<string, Blob>;
-  /** Smaller phone copy per layer id, for layers that have one. */
+  /** Phone copies, keyed by their path in the zip. */
   phoneImages: Map<string, Blob>;
   thumbnail: Blob | null;
 }
@@ -60,13 +63,12 @@ export async function readZip(file: Blob): Promise<ImportedProject> {
   const images = new Map<string, Blob>();
   const phoneImages = new Map<string, Blob>();
   for (const layer of project.layers) {
-    const phone = layer.phoneFile ? entries[layer.phoneFile] : undefined;
     // A missing phone copy isn't fatal: the original is there, and phones say what's wrong.
-    if (layer.phoneFile && phone) {
-      phoneImages.set(layer.id, new Blob([phone as Uint8Array<ArrayBuffer>], { type: mimeForFile(layer.phoneFile)! }));
-    } else {
-      layer.phoneFile = null;
-    }
+    layer.phoneCopies = layer.phoneCopies.filter((copy) => {
+      const data = entries[copy.file];
+      if (data) phoneImages.set(copy.file, new Blob([data as Uint8Array<ArrayBuffer>], { type: mimeForFile(copy.file)! }));
+      return Boolean(data);
+    });
     const data = entries[layer.file];
     if (!data) throw new ProjectError(`The image for "${layer.name}" is missing from this zip.`);
     // Pass the view itself: fflate may return a slice of the whole zip's buffer.

@@ -1,4 +1,4 @@
-import { isPhone } from './device';
+import { copySizesFor, scaledSize } from './sizes';
 
 export interface DecodedImage {
   source: ImageBitmap | HTMLImageElement;
@@ -62,39 +62,35 @@ export async function thumbnail(image: DecodedImage, maxSide = 320): Promise<str
   return canvas.toDataURL('image/png');
 }
 
-/**
- * Longest side of the smaller copy made for phones. Decoding a larger image can exceed what Safari
- * allows one tab on an older iPhone (a 12 mini crashed opening an 11,871 × 8,951 px map).
- */
-export const PHONE_MAX_SIDE = 6000;
-
-export function needsPhoneCopy(width: number, height: number): boolean {
-  return Math.max(width, height) > PHONE_MAX_SIDE;
+export interface PhoneCopy {
+  /** Longest side it was made at (one of PHONE_SIZES). */
+  maxSide: number;
+  width: number;
+  height: number;
+  blob: Blob;
 }
 
 /**
- * A copy of the image no larger than PHONE_MAX_SIDE, made on the laptop so phones never decode the
- * original. JPEG stays JPEG; PNG stays PNG so transparency is kept. Returns null if none is needed.
+ * Smaller copies of a decoded image for devices with little memory, one per size in PHONE_SIZES
+ * that is smaller than the image. Made on the laptop so phones never decode the original. JPEG
+ * stays JPEG; PNG stays PNG so transparency is kept.
  */
-export async function makePhoneCopy(image: DecodedImage, type: string): Promise<Blob | null> {
-  if (!needsPhoneCopy(image.width, image.height)) return null;
-  const scale = PHONE_MAX_SIDE / Math.max(image.width, image.height);
-  const w = Math.round(image.width * scale);
-  const h = Math.round(image.height * scale);
-  const small = await createImageBitmap(image.source, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  canvas.getContext('2d')!.drawImage(small, 0, 0);
-  small.close();
-  const outType = type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, outType, 0.9));
-  canvas.width = canvas.height = 0;
-  if (!blob) throw new Error("The smaller copy for phones couldn't be made.");
-  return blob;
-}
-
-/** Phones and tablets open the smaller phone copies; see isPhone in device.ts. */
-export function usesPhoneCopies(): boolean {
-  return isPhone();
+export async function makePhoneCopies(image: DecodedImage, type: string, only?: number[]): Promise<PhoneCopy[]> {
+  const copies: PhoneCopy[] = [];
+  for (const maxSide of copySizesFor(image)) {
+    if (only && !only.includes(maxSide)) continue;
+    const { width, height } = scaledSize(image, maxSide);
+    const small = await createImageBitmap(image.source, { resizeWidth: width, resizeHeight: height, resizeQuality: 'high' });
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d')!.drawImage(small, 0, 0);
+    small.close();
+    const outType = type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, outType, 0.9));
+    canvas.width = canvas.height = 0;
+    if (!blob) throw new Error("The smaller copies for phones couldn't be made.");
+    copies.push({ maxSide, width, height, blob });
+  }
+  return copies;
 }

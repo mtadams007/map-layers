@@ -29,16 +29,31 @@ export interface Layer {
   fileType: string;
   /** Whether `file` is already in on-device storage, so a save can skip it. */
   stored: boolean;
-  /** Smaller copy for phones, or null when the original is small enough (or none was made yet). */
-  phoneFile: Blob | null;
-  /** Whether `phoneFile` is already in on-device storage. */
-  phoneStored: boolean;
+  /** Smaller copies for devices with little memory, largest first; empty for small layers. */
+  phoneCopies: LayerPhoneCopy[];
   thumbnail: string;
   points: ControlPoint[];
   pending: PendingPoint | null;
   fitMode: FitMode;
   visible: boolean;
   opacity: number;
+}
+
+export interface LayerPhoneCopy {
+  /** Path in the zip. */
+  file: string;
+  maxSide: number;
+  width: number;
+  height: number;
+  /** The image, or null while it is only in on-device storage (not needed on this device). */
+  blob: Blob | null;
+  /** Whether it is already in on-device storage, so a save can skip it. */
+  stored: boolean;
+}
+
+/** Path in the zip for a new phone copy. */
+export function phoneCopyPath(layerId: string, maxSide: number, type: string): string {
+  return `layers-phone/${layerId}-${maxSide}.${IMAGE_EXTENSIONS[type] ?? 'png'}`;
 }
 
 export interface LoadingLayer {
@@ -181,7 +196,7 @@ export function toProject(modified: string): Project {
       id: l.id,
       name: l.name,
       file: `layers/${l.id}.${IMAGE_EXTENSIONS[l.fileType] ?? 'png'}`,
-      phoneFile: l.phoneFile ? `layers-phone/${l.id}.${IMAGE_EXTENSIONS[l.phoneFile.type] ?? 'png'}` : null,
+      phoneCopies: l.phoneCopies.map(({ file, maxSide, width, height }) => ({ file, maxSide, width, height })),
       width: l.width,
       height: l.height,
       order,

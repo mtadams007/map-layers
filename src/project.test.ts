@@ -4,7 +4,7 @@ import { buildZip, readZip } from './zip';
 
 function sample(): Project {
   return {
-    formatVersion: 1,
+    formatVersion: 2,
     id: 'map-1',
     name: 'Harbour map',
     created: '2026-10-08T10:00:00.000Z',
@@ -16,7 +16,7 @@ function sample(): Project {
         id: 'roads',
         name: 'Roads',
         file: 'layers/roads.png',
-        phoneFile: null,
+        phoneCopies: [],
         width: 2480,
         height: 1650,
         order: 0,
@@ -32,7 +32,7 @@ function sample(): Project {
         id: 'base',
         name: 'Survey base',
         file: 'layers/base.jpg',
-        phoneFile: 'layers-phone/base.jpg',
+        phoneCopies: [{ file: 'layers-phone/base-6000.jpg', maxSide: 6000, width: 6000, height: 4500 }],
         width: 4000,
         height: 3000,
         order: 1,
@@ -47,6 +47,19 @@ function sample(): Project {
 describe('readProject', () => {
   it('accepts a valid project unchanged', () => {
     expect(readProject(JSON.parse(JSON.stringify(sample())))).toEqual(sample());
+  });
+
+  it('upgrades a version 1 file: its single phone copy was 6,000 px', () => {
+    const v1 = JSON.parse(JSON.stringify(sample()));
+    v1.formatVersion = 1;
+    for (const l of v1.layers) delete l.phoneCopies;
+    v1.layers[0].phoneFile = null;
+    v1.layers[1].phoneFile = 'layers-phone/base.jpg';
+    const p = readProject(v1);
+    expect(p.formatVersion).toBe(FORMAT_VERSION);
+    expect(p.layers[0].phoneCopies).toEqual([]);
+    expect(p.layers[1].phoneCopies).toEqual([{ file: 'layers-phone/base.jpg', maxSide: 6000, width: 6000, height: 4500 }]);
+    expect('phoneFile' in p.layers[1]).toBe(false);
   });
 
   it('rejects files from a newer version and non-projects', () => {
@@ -80,7 +93,7 @@ describe('readProject', () => {
 describe('zip round trip', () => {
   it('keeps the project, images and thumbnail', async () => {
     const project = sample();
-    project.layers[1].phoneFile = null;
+    project.layers[1].phoneCopies = [];
     const images = new Map([
       ['roads', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' })],
       ['base', new Blob([new Uint8Array([9, 8, 7, 6])], { type: 'image/jpeg' })],
@@ -100,10 +113,10 @@ describe('zip round trip', () => {
       ['roads', new Blob([new Uint8Array([1])], { type: 'image/png' })],
       ['base', new Blob([new Uint8Array([2])], { type: 'image/jpeg' })],
     ]);
-    const phone = new Map([['base', new Blob([new Uint8Array([3, 3])], { type: 'image/jpeg' })]]);
+    const phone = new Map([['layers-phone/base-6000.jpg', new Blob([new Uint8Array([3, 3])], { type: 'image/jpeg' })]]);
     const back = await readZip(await buildZip(project, images, phone, null));
-    expect([...new Uint8Array(await back.phoneImages.get('base')!.arrayBuffer())]).toEqual([3, 3]);
-    expect(back.project.layers[1].phoneFile).toBe('layers-phone/base.jpg');
+    expect([...new Uint8Array(await back.phoneImages.get('layers-phone/base-6000.jpg')!.arrayBuffer())]).toEqual([3, 3]);
+    expect(back.project.layers[1].phoneCopies).toHaveLength(1);
 
     const { zipSync, strToU8 } = await import('fflate');
     const noPhone = zipSync({
@@ -112,7 +125,7 @@ describe('zip round trip', () => {
       'layers/base.jpg': new Uint8Array([2]),
     });
     const imported = await readZip(new Blob([noPhone]));
-    expect(imported.project.layers[1].phoneFile).toBeNull();
+    expect(imported.project.layers[1].phoneCopies).toEqual([]);
     expect(imported.phoneImages.size).toBe(0);
   });
 

@@ -2,8 +2,14 @@
 // The same structure is kept in on-device storage and written into exported zips.
 
 import type { FitMode, Transform, Vec } from './fit';
+import { scaledSize } from './sizes';
 
-export const FORMAT_VERSION = 1;
+/**
+ * Version history:
+ * 1. First release.
+ * 2. `phoneFile` (one 6,000 px copy) replaced by `phoneCopies` (one per size in PHONE_SIZES).
+ */
+export const FORMAT_VERSION = 2;
 
 export interface ProjectPoint {
   layer: Vec;
@@ -15,8 +21,8 @@ export interface ProjectLayer {
   name: string;
   /** Path of the original image inside the zip, e.g. "layers/<id>.png". */
   file: string;
-  /** Smaller copy for phones, e.g. "layers-phone/<id>.jpg"; null when the original is small enough. */
-  phoneFile: string | null;
+  /** Smaller copies for devices with little memory, largest first; empty for small layers. */
+  phoneCopies: ProjectPhoneCopy[];
   width: number;
   height: number;
   /** Draw order: 0 is drawn on top. */
@@ -36,6 +42,15 @@ export interface ProjectLayer {
     hue: number;
     recolor: string | null;
   };
+}
+
+export interface ProjectPhoneCopy {
+  /** Path inside the zip, e.g. "layers-phone/<id>-4096.jpg". */
+  file: string;
+  /** Longest side it was made at. */
+  maxSide: number;
+  width: number;
+  height: number;
 }
 
 export interface Project {
@@ -84,11 +99,31 @@ export function readProject(raw: unknown): Project {
   if (version > FORMAT_VERSION) {
     throw new ProjectError('This map was made with a newer version of Map Layers. Update the app to open it.');
   }
-  // Older versions are upgraded here, one step at a time, as the format changes.
-  return validateV1(raw);
+  // Older versions are upgraded one step at a time, then checked as the current version.
+  let current = raw;
+  if (version === 1) current = upgradeV1(current);
+  return validate(current);
 }
 
-function validateV1(raw: Record<string, unknown>): Project {
+/** Version 1 had at most one phone copy, always 6,000 px on its longest side, in `phoneFile`. */
+function upgradeV1(raw: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(raw.layers)) return raw;
+  return {
+    ...raw,
+    formatVersion: 2,
+    layers: raw.layers.map((l) => {
+      if (!isObject(l)) return l;
+      const { phoneFile, ...rest } = l;
+      const size = typeof l.width === 'number' && typeof l.height === 'number' ? scaledSize({ width: l.width, height: l.height }, 6000) : null;
+      return {
+        ...rest,
+        phoneCopies: typeof phoneFile === 'string' && size ? [{ file: phoneFile, maxSide: 6000, ...size }] : [],
+      };
+    }),
+  };
+}
+
+function validate(raw: Record<string, unknown>): Project {
   const layersRaw = raw.layers;
   if (!Array.isArray(layersRaw)) throw bad('layers');
   const layers = layersRaw.map((l, i) => validateLayer(l, i));
@@ -113,8 +148,11 @@ function validateLayer(raw: unknown, index: number): ProjectLayer {
   if (!isObject(raw)) throw bad(`layer ${index + 1}`);
   const file = str(raw.file, 'layer file');
   if (!safeImagePath(file)) throw bad('layer file');
-  const phoneFile = typeof raw.phoneFile === 'string' ? raw.phoneFile : null;
-  if (phoneFile !== null && !safeImagePath(phoneFile)) throw bad('layer phone file');
+  const phoneCopies = (Array.isArray(raw.phoneCopies) ? raw.phoneCopies : []).map((c) => {
+    if (!isObject(c) || typeof c.file !== 'string' || !safeImagePath(c.file)) throw bad('layer phone copy');
+    return { file: c.file, maxSide: positiveInt(c.maxSide, 'phone copy size'), width: positiveInt(c.width, 'phone copy width'), height: positiveInt(c.height, 'phone copy height') };
+  });
+  phoneCopies.sort((a, b) => b.maxSide - a.maxSide);
   const alignment = isObject(raw.alignment) ? raw.alignment : {};
   const appearance = isObject(raw.appearance) ? raw.appearance : {};
   const points = Array.isArray(alignment.points) ? alignment.points : [];
@@ -122,7 +160,7 @@ function validateLayer(raw: unknown, index: number): ProjectLayer {
     id: str(raw.id, 'layer id'),
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name : `Layer ${index + 1}`,
     file,
-    phoneFile,
+    phoneCopies,
     width: positiveInt(raw.width, 'layer width'),
     height: positiveInt(raw.height, 'layer height'),
     order: typeof raw.order === 'number' && Number.isFinite(raw.order) ? raw.order : index,
