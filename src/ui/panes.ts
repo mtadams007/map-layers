@@ -33,6 +33,13 @@ export interface PaneHooks {
 const baseCamera = new Camera();
 const layerCameras = new Map<string, Camera>();
 
+/** Whether the magnifier follows the cursor over the Create panes. The user can switch it off. */
+let loupeEnabled = true;
+
+export function setLoupeEnabled(on: boolean) {
+  loupeEnabled = on;
+}
+
 export function forgetCamera(layerId: string) {
   layerCameras.delete(layerId);
 }
@@ -128,7 +135,7 @@ export class Pane {
 
     this.drawContent(renderer, viewMatrix(cam), false);
 
-    const loupeOn = this.hover !== null && this.kind !== 'view';
+    const loupeOn = loupeEnabled && this.hover !== null && this.kind !== 'view';
     this.loupe.hidden = !loupeOn;
     if (loupeOn) {
       const h = this.hover!;

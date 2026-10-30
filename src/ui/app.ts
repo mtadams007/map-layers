@@ -39,16 +39,19 @@ import {
   isStandalone,
   lowerSizeBudget,
   noteOpening,
+  readStored,
   sizeBudget,
   takeCrashedOpening,
+  writeStored,
 } from '../device';
 import { newId } from '../id';
 import { esc } from './html';
 import { libraryHtml, type InstallHelp } from './library';
-import { forgetCamera, Pane, resetBaseCamera, type PaneKind } from './panes';
+import { forgetCamera, Pane, resetBaseCamera, setLoupeEnabled, type PaneKind } from './panes';
 
 const WORKSPACE_BG: [number, number, number] = [0.953, 0.957, 0.965];
 const INSTALL_HELP_KEY = 'map-layers:install-help-dismissed';
+const LOUPE_KEY = 'map-layers:loupe';
 const UNTITLED = 'Untitled map';
 
 export function startApp(root: HTMLElement, renderer: Renderer) {
@@ -91,6 +94,21 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
   /** Chrome on Android offers its own install prompt; this holds it until the user asks. */
   let installPrompt: (Event & { prompt: () => Promise<void> }) | null = null;
   let installHelpDismissed = readFlag(INSTALL_HELP_KEY);
+  /** Magnifier in the Create panes; on unless switched off on this device. */
+  let loupe = readStored(LOUPE_KEY) !== '0';
+  setLoupeEnabled(loupe);
+
+  /** The magnifier row at the bottom of the Create side panel. */
+  function loupeToggleHtml(): string {
+    return `
+      <div class="setting-row">
+        <div>
+          <div>Magnifier</div>
+          <div class="muted small">Magnified view under the cursor while placing points</div>
+        </div>
+        <button class="switch" role="switch" data-action="loupe" aria-checked="${loupe}" aria-label="Magnifier"><span></span></button>
+      </div>`;
+  }
 
   function requestDraw() {
     if (drawQueued) return;
@@ -848,7 +866,8 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
       panel.innerHTML = sheetHtml();
       return;
     }
-    panel.innerHTML = state.mode === 'view' ? viewPanelHtml() : fitPanelHtml();
+    panel.innerHTML =
+      state.mode === 'view' ? viewPanelHtml() : `${fitPanelHtml()}<div class="divider"></div><h2>Tools</h2>${loupeToggleHtml()}`;
   }
 
   /** The phone's layer panel: a bottom sheet over the map, pulled up or down by its handle. */
@@ -1055,6 +1074,13 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
       case 'view':
         state.createView = target.dataset.value as typeof state.createView;
         changed();
+        break;
+      case 'loupe':
+        loupe = !loupe;
+        setLoupeEnabled(loupe);
+        writeStored(LOUPE_KEY, loupe ? '1' : '0');
+        target.setAttribute('aria-checked', String(loupe));
+        requestDraw();
         break;
       case 'fit-mode': {
         const layer = selectedLayer();
