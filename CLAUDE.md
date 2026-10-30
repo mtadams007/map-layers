@@ -17,6 +17,7 @@ Read `docs/ARCHITECTURE.md` for the full design and `docs/wireframes/` for the a
 
 - **No blend modes for now.** No Normal/Multiply/Screen control anywhere in the UI. Listed under "Later, if needed".
 - **Pinch-zoom anchors at the point between the fingers.** Two-finger pan at the same time, zoom limits (can't zoom out past the whole map or in absurdly far), double-tap to zoom in. Laptop: trackpad pinch and scroll wheel zoom toward the cursor. Prevent the browser's own page zoom (iPhone Safari needs extra care).
+- **Opening a map shows View first, on every device.** New maps start in Create; the header switch changes mode on laptops.
 - **Create mode is laptop-only.** Phones get the Library and View screens only; there is no "Edit alignment" entry on phones.
 - **Phone layer rows have no expand button until phase 4,** when brightness and recolor arrive. Phase 3 rows are visibility, opacity slider and percentage.
 - **Android testing comes later:** the owner will have an Android phone soon. Until then, test on the owner's iPhone 12 mini and with Android emulation.

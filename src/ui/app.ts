@@ -246,7 +246,7 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
     state.baseId = project.baseLayerId;
     state.selectedId = state.layers.find((l) => l.id !== state.baseId)?.id ?? state.baseId;
     state.screen = 'editor';
-    state.mode = phone ? 'view' : 'create';
+    state.mode = 'view';
     state.dirty = false;
     sheetOpen = true;
     resetBaseCamera();
