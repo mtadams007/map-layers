@@ -28,6 +28,7 @@ Read `docs/ARCHITECTURE.md` for the full design and `docs/wireframes/` for the a
 - **Saving uses a Save button, not autosave.** Show when there are unsaved changes, and warn before leaving a map with unsaved changes.
 - **Map and layer names are editable** in Create mode.
 - **Opacity and visibility are saved with the map,** whether changed in Create or View. Separate per-device viewer settings with "Reset to defaults" stay in phase 4.
+- **Export image (built 2026-11-01).** "Export image…" in View (laptop panel and phone sheet) saves a JPEG or PNG of the visible layers at their opacity. Area: the whole map framed to the base layer, or exactly the current view. Whole-map sizes: 2,000 and 4,000 px plus the largest the device allows (full size in Chrome/Firefox; about 16.7 megapixels in Safari and on iPhone; no larger than the loaded phone copy on phones). JPEG is the default; PNG keeps transparent areas. Size rules are in `src/imageExport.ts`.
 
 ## Hosting
 
@@ -37,7 +38,6 @@ Read `docs/ARCHITECTURE.md` for the full design and `docs/wireframes/` for the a
 ## Backlog (not scheduled; don't build until the owner asks)
 
 - **"Small copy" export for sharing.** Discussed 2026-10-10. A clearly labelled zip with only the 4,096 px phone copies (no originals), about a quarter of the size, that opens on any device. It's a viewing copy, not a backup: the library should mark maps imported from it, and aligning on it is less precise.
-- **Export as JPEG.** Requested 2026-10-09. Details to agree before building: whether it exports the current view or the whole map, at what resolution, and whether it's available on phones.
 
 ## Open questions
 

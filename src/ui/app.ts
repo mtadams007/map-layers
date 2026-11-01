@@ -1,4 +1,4 @@
-import type { Vec } from '../fit';
+import { compose, type Transform, type Vec } from '../fit';
 import type { Renderer } from '../gl/renderer';
 import { ACCEPTED_TYPES, decodeImage, makePhoneCopies, thumbnail } from '../image';
 import { copySizesFor, nextBudget, pickVersion } from '../sizes';
@@ -31,12 +31,14 @@ import {
   type StoredProject,
 } from '../storage';
 import { composeThumbnail } from '../thumbnail';
+import { canvasLimits, fitToLimits, mapSizeOptions, type ExportArea, type ExportFormat } from '../imageExport';
 import { buildZip, readZip } from '../zip';
 import {
   clearOpening,
   isIOS,
   isPhone,
   isStandalone,
+  isWebKitBrowser,
   lowerSizeBudget,
   noteOpening,
   readStored,
@@ -63,6 +65,7 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
     <input type="file" id="file-input" accept="${ACCEPTED_TYPES.join(',')}" multiple hidden>
     <input type="file" id="zip-input" accept=".zip,application/zip" hidden>
     <div class="busy" id="busy" hidden><div class="busy-box" id="busy-text"></div></div>
+    <div class="dialog-backdrop" id="dialog" hidden></div>
     <div class="toast" id="toast" hidden></div>
   `;
   const $ = (id: string) => root.querySelector<HTMLElement>(`#${id}`)!;
@@ -75,6 +78,7 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
   const busy = $('busy');
   const busyText = $('busy-text');
   const toast = $('toast');
+  const dialog = $('dialog');
 
   let panes: Pane[] = [];
   let layoutKey = '';
@@ -465,10 +469,14 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
   }
 
   function download(blob: Blob, name: string) {
+    downloadFile(blob, `${safeFileName(name)}.zip`);
+  }
+
+  function downloadFile(blob: Blob, fileName: string) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'map'}.zip`;
+    a.download = fileName;
     document.body.append(a);
     a.click();
     a.remove();
@@ -881,7 +889,8 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
         <h2 class="sheet-title" data-action="sheet-toggle">Layers</h2>
         ${save}
       </div>
-      <ul class="view-list">${viewRowsHtml()}</ul>`;
+      <ul class="view-list">${viewRowsHtml()}</ul>
+      <button class="link sheet-export" data-action="export-image">Export image…</button>`;
   }
 
   function fitPanelHtml(): string {
@@ -973,7 +982,10 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
 
   function viewPanelHtml(): string {
     return `<h2>Layers</h2><ul class="view-list">${viewRowsHtml()}</ul>
-      <p class="muted small">Drag to pan, scroll or pinch to zoom, double-click to zoom in. Opacity and visibility are saved with the map.</p>`;
+      <p class="muted small">Drag to pan, scroll or pinch to zoom, double-click to zoom in. Opacity and visibility are saved with the map.</p>
+      <div class="divider"></div>
+      <button class="button" data-action="export-image">Export image…</button>
+      <p class="muted small">Save the map as you see it as a JPEG or PNG.</p>`;
   }
 
   function viewRowsHtml(): string {
@@ -991,6 +1003,125 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
           </li>`;
       })
       .join('');
+  }
+
+  // ---- Exporting an image ----
+
+  /** Choices in the open "Export image" dialog, or null when it's closed. */
+  let exportChoice: { area: ExportArea; size: number; format: ExportFormat } | null = null;
+
+  function exportSizes() {
+    const base = baseLayer()!;
+    return mapSizeOptions(base, sizeBudget(), canvasLimits(isWebKitBrowser()));
+  }
+
+  function openExportDialog() {
+    // Default to the largest whole-map size up to 4,000 px: sharp, but quick and a sensible file size.
+    const sizes = exportSizes();
+    const medium = sizes.findIndex((o) => Math.max(o.width, o.height) >= 4000);
+    exportChoice = { area: 'map', size: medium >= 0 ? medium : sizes.length - 1, format: 'jpeg' };
+    renderDialog();
+  }
+
+  function renderDialog() {
+    dialog.hidden = exportChoice === null;
+    if (!exportChoice) {
+      dialog.innerHTML = '';
+      return;
+    }
+    const c = exportChoice;
+    const sizes = exportSizes();
+    const radio = (name: string, value: string, checked: boolean, label: string, note = '') => `
+      <label class="choice"><input type="radio" name="${name}" value="${value}" ${checked ? 'checked' : ''}>
+        <span>${label}${note ? `<span class="muted small"> ${note}</span>` : ''}</span></label>`;
+    const sizeList =
+      c.area === 'map'
+        ? `<fieldset><legend>Size</legend>${sizes
+            .map((o, i) => radio('size', String(i), i === c.size, o.label, `${o.width.toLocaleString()} × ${o.height.toLocaleString()} px`))
+            .join('')}</fieldset>`
+        : '';
+    dialog.innerHTML = `
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="export-title">
+        <h2 id="export-title" class="dialog-title">Export image</h2>
+        <fieldset><legend>Area</legend>
+          ${radio('area', 'map', c.area === 'map', 'Whole map', 'framed to the base layer')}
+          ${radio('area', 'view', c.area === 'view', 'This view', 'exactly what is on screen')}
+        </fieldset>
+        ${sizeList}
+        <fieldset><legend>Format</legend>
+          ${radio('format', 'jpeg', c.format === 'jpeg', 'JPEG', 'smaller file')}
+          ${radio('format', 'png', c.format === 'png', 'PNG', 'no quality loss, keeps transparent areas, much larger')}
+        </fieldset>
+        <p class="muted small">Hidden layers stay hidden; each layer keeps its opacity.</p>
+        <div class="dialog-buttons">
+          <button class="button" data-action="export-cancel">Cancel</button>
+          <button class="button primary" data-action="export-go">Export</button>
+        </div>
+      </div>`;
+  }
+
+  dialog.addEventListener('change', (e) => {
+    const input = e.target as HTMLInputElement;
+    if (!exportChoice) return;
+    if (input.name === 'area') exportChoice.area = input.value as ExportArea;
+    if (input.name === 'size') exportChoice.size = Number(input.value);
+    if (input.name === 'format') exportChoice.format = input.value as ExportFormat;
+    renderDialog();
+  });
+
+  dialog.addEventListener('click', (e) => {
+    // A click on the dimmed backdrop closes the dialog.
+    if (e.target === dialog) {
+      exportChoice = null;
+      renderDialog();
+    }
+  });
+
+  /** Draw the visible layers, bottom first, into an image and download it. */
+  async function exportImage() {
+    const c = exportChoice;
+    const base = baseLayer();
+    exportChoice = null;
+    renderDialog();
+    if (!c || !base || !state.map) return;
+    setBusy('Preparing the image…');
+    // Let the "Preparing" message appear before the browser is busy drawing.
+    await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+    try {
+      let size: { width: number; height: number };
+      let toOutput: Transform;
+      if (c.area === 'view') {
+        const pane = panes.find((p) => p.kind === 'view');
+        if (!pane) throw new Error('Open the map in View to export what is on screen.');
+        const rect = pane.body.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        size = fitToLimits({ width: Math.round(rect.width * dpr), height: Math.round(rect.height * dpr) }, canvasLimits(isWebKitBrowser()));
+        const k = size.width / rect.width;
+        const cam = pane.camera;
+        toOutput = [cam.scale * k, 0, cam.offsetX * k, 0, cam.scale * k, cam.offsetY * k];
+      } else {
+        size = exportSizes()[c.size];
+        const k = size.width / base.width;
+        toOutput = [k, 0, 0, 0, k, 0];
+      }
+      const png = c.format === 'png';
+      const canvas = renderer.renderToCanvas(size.width, size.height, toOutput, png ? [0, 0, 0, 0] : [1, 1, 1, 1], (matrix, draw) => {
+        for (let i = state.layers.length - 1; i >= 0; i--) {
+          const l = state.layers[i];
+          const t = transformOf(l);
+          if (l.visible && t) draw(l.id, { matrix: compose(matrix, t), opacity: l.opacity });
+        }
+      });
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, png ? 'image/png' : 'image/jpeg', 0.92));
+      canvas.width = canvas.height = 0;
+      if (!blob) throw new Error("The image couldn't be saved. Try a smaller size.");
+      downloadFile(blob, `${safeFileName(state.map.name)}${c.area === 'view' ? ' (view)' : ''}.${png ? 'png' : 'jpg'}`);
+    } catch (err) {
+      showError(errorMessage(err, "The image couldn't be exported."));
+    } finally {
+      setBusy(null);
+      requestDraw();
+    }
   }
 
   // ---- Events ----
@@ -1074,6 +1205,16 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
       case 'view':
         state.createView = target.dataset.value as typeof state.createView;
         changed();
+        break;
+      case 'export-image':
+        openExportDialog();
+        break;
+      case 'export-cancel':
+        exportChoice = null;
+        renderDialog();
+        break;
+      case 'export-go':
+        void exportImage();
         break;
       case 'loupe':
         loupe = !loupe;
@@ -1285,7 +1426,10 @@ export function startApp(root: HTMLElement, renderer: Renderer) {
 
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (openMenu) {
+      if (exportChoice) {
+        exportChoice = null;
+        renderDialog();
+      } else if (openMenu) {
         openMenu = null;
         changed();
       } else {
@@ -1392,4 +1536,9 @@ function planVersions(project: Project, budget: number) {
     ];
     return { layer, version: pickVersion(versions, budget) };
   });
+}
+
+/** A map name made safe to use as a file name. */
+function safeFileName(name: string): string {
+  return name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'map';
 }

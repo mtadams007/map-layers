@@ -299,6 +299,74 @@ export class Renderer {
     }
   }
 
+  /**
+   * Draw a scene off-screen into a 2D canvas of `width` × `height` px, for saving as an image.
+   * The GPU can only draw a limited area at once, so the image is drawn in tiles and stitched
+   * together. `drawScene` is called once per tile with the matrix that maps the scene's
+   * coordinates (via `toOutput`, scene → output pixels) into that tile. `background` is RGBA 0–1;
+   * a transparent background keeps transparent areas (for PNG).
+   */
+  renderToCanvas(
+    width: number,
+    height: number,
+    toOutput: Transform,
+    background: [number, number, number, number],
+    drawScene: (matrix: Transform, draw: (id: string, opts: DrawOptions) => void) => void,
+  ): HTMLCanvasElement {
+    const gl = this.gl;
+    const dims = gl.getParameter(gl.MAX_VIEWPORT_DIMS) as Int32Array;
+    const limit = Math.min(MAX_TILE, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE), dims[0], dims[1]);
+    const tileW = Math.min(limit, width);
+    const tileH = Math.min(limit, height);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error("This browser couldn't prepare an image that size.");
+
+    const texture = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, tileW, tileH);
+    const framebuffer = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    const savedPane = this.pane;
+    const savedDpr = this.dpr;
+    try {
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+        throw new Error("This browser couldn't draw the image off-screen.");
+      }
+      this.dpr = 1;
+      const pixels = new Uint8Array(tileW * tileH * 4);
+      const [a, b, c, d, e, f] = toOutput;
+      for (let ty = 0; ty < height; ty += tileH) {
+        for (let tx = 0; tx < width; tx += tileW) {
+          const w = Math.min(tileW, width - tx);
+          const h = Math.min(tileH, height - ty);
+          gl.viewport(0, 0, w, h);
+          gl.scissor(0, 0, w, h);
+          gl.clearColor(background[0] * background[3], background[1] * background[3], background[2] * background[3], background[3]);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          this.pane = { x: 0, y: 0, width: w, height: h };
+          gl.uniform2f(this.uniforms.u_viewport, w, h);
+          drawScene([a, b, c - tx, d, e, f - ty], (id, opts) => this.draw(id, opts));
+          const view = pixels.subarray(0, w * h * 4);
+          gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, view);
+          this.checkError(`drawing the image (${width} × ${height} px)`);
+          ctx.putImageData(toImageData(view, w, h), tx, ty);
+        }
+      }
+    } finally {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteFramebuffer(framebuffer);
+      gl.deleteTexture(texture);
+      this.pane = savedPane;
+      this.dpr = savedDpr;
+    }
+    return canvas;
+  }
+
   private setMatrix([a, b, c, d, e, f]: Transform) {
     // Column-major mat3.
     this.gl.uniformMatrix3fv(this.uniforms.u_matrix, false, [a, d, 0, b, e, 0, c, f, 1]);
@@ -367,4 +435,33 @@ function link(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram 
     throw new Error(`Shader failed to link: ${gl.getProgramInfoLog(program)}`);
   }
   return program;
+}
+
+/**
+ * Pixels read back from WebGL into ImageData: rows run bottom-up there and colours are
+ * premultiplied by alpha; ImageData wants top-down rows and straight colours.
+ */
+function toImageData(src: Uint8Array, w: number, h: number): ImageData {
+  const img = new ImageData(w, h);
+  const out = img.data;
+  const row = w * 4;
+  for (let y = 0; y < h; y++) {
+    const from = (h - 1 - y) * row;
+    const to = y * row;
+    for (let i = 0; i < row; i += 4) {
+      const alpha = src[from + i + 3];
+      out[to + i + 3] = alpha;
+      if (alpha === 255 || alpha === 0) {
+        out[to + i] = src[from + i];
+        out[to + i + 1] = src[from + i + 1];
+        out[to + i + 2] = src[from + i + 2];
+      } else {
+        const k = 255 / alpha;
+        out[to + i] = Math.min(255, Math.round(src[from + i] * k));
+        out[to + i + 1] = Math.min(255, Math.round(src[from + i + 1] * k));
+        out[to + i + 2] = Math.min(255, Math.round(src[from + i + 2] * k));
+      }
+    }
+  }
+  return img;
 }

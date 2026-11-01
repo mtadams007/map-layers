@@ -92,3 +92,11 @@ function removeStored(key: string) {
     // Nothing to do.
   }
 }
+
+/**
+ * Safari or any browser on iPhone/iPad (they all use Safari's engine), which limits how large an
+ * image the page can build.
+ */
+export function isWebKitBrowser(): boolean {
+  return isIOS() || /^((?!chrome|chromium|android|edg|firefox).)*safari/i.test(navigator.userAgent);
+}
